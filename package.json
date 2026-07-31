@@ -1,0 +1,66 @@
+{
+  "name": "@seatlayer/server",
+  "version": "0.1.0",
+  "description": "Official Node.js server SDK for the SeatLayer reserved-seating API. Secret-key only — never ship this to a browser.",
+  "license": "MIT",
+  "homepage": "https://docs.seatlayer.io/server-api/",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/seatlayer/seatlayer-node.git"
+  },
+  "bugs": {
+    "url": "https://github.com/seatlayer/seatlayer-node/issues"
+  },
+  "type": "module",
+  "main": "./dist/index.cjs",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "import": {
+        "types": "./dist/index.d.ts",
+        "default": "./dist/index.js"
+      },
+      "require": {
+        "types": "./dist/index.d.cts",
+        "default": "./dist/index.cjs"
+      }
+    }
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
+  "sideEffects": false,
+  "scripts": {
+    "build": "tsup",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "lint:package": "publint && attw --pack .",
+    "validate": "pnpm typecheck && pnpm test && pnpm build && pnpm lint:package",
+    "prepublishOnly": "pnpm validate"
+  },
+  "devDependencies": {
+    "@arethetypeswrong/cli": "0.18.5",
+    "@types/node": "24.10.1",
+    "publint": "0.3.21",
+    "tsup": "8.5.1",
+    "typescript": "5.9.3",
+    "vitest": "4.1.10"
+  },
+  "keywords": [
+    "seatlayer",
+    "reserved-seating",
+    "seating-chart",
+    "ticketing",
+    "box-office",
+    "server-sdk",
+    "seat-map"
+  ],
+  "engines": {
+    "node": ">=20.19.4"
+  },
+  "packageManager": "pnpm@11.10.0"
+}
