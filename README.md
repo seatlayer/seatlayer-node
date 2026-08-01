@@ -264,6 +264,7 @@ Full reference: [docs.seatlayer.io/server-api](https://docs.seatlayer.io/server-
 | Android | [`seatlayer-android`](https://github.com/seatlayer/seatlayer-android) |
 | Flutter | [`seatlayer_flutter`](https://github.com/seatlayer/seatlayer-flutter) |
 | Python (server) | [`seatlayer`](https://github.com/seatlayer/seatlayer-python) |
+| PHP (server) | [`seatlayer/seatlayer-php`](https://github.com/seatlayer/seatlayer-php) |
 
 ## Development
 
