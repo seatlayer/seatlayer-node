@@ -6,11 +6,13 @@ Official Node.js server SDK for the [SeatLayer](https://seatlayer.io) reserved-s
 > browser, a mobile app, or anything a ticket buyer can open. Browser surfaces get short-lived,
 > origin-bound tokens that you mint here — see [Embedding the control room](#embedding-the-control-room).
 
+## Install
+
 ```bash
 npm install @seatlayer/server
 ```
 
-Requires Node 20.19.4+.
+Requires Node 20.19.4 or newer. No runtime dependencies.
 
 ## Quick start
 
@@ -240,6 +242,35 @@ await seatlayer.request('POST', '/v1/events/ev_1/some-new-route', { body: { … 
 | `workspaces` | `list` `create` `retrieve` `update` |
 
 Full reference: [docs.seatlayer.io/server-api](https://docs.seatlayer.io/server-api/)
+
+## Related resources
+
+- [Server SDK guide](https://docs.seatlayer.io/server-sdk/install/)
+- [Errors, retries and idempotency](https://docs.seatlayer.io/server-sdk/reliability/)
+- [Webhook verification](https://docs.seatlayer.io/server-sdk/webhooks/)
+- [Server API reference](https://docs.seatlayer.io/server-api/events/)
+- [OpenAPI description](https://docs.seatlayer.io/openapi.json)
+- [Agent-readable documentation](https://docs.seatlayer.io/llms.txt)
+- [SeatLayer GitHub organization](https://github.com/seatlayer)
+
+### Other SeatLayer SDKs
+
+| Surface | Package |
+|---|---|
+| Browser (vanilla) | [`@seatlayer/js`](https://github.com/seatlayer/seatlayer-sdk) |
+| React | [`@seatlayer/react`](https://github.com/seatlayer/seatlayer-sdk) |
+| React Native | [`@seatlayer/react-native`](https://github.com/seatlayer/seatlayer-react-native) |
+| iOS | [`seatlayer-ios`](https://github.com/seatlayer/seatlayer-ios) |
+| Android | [`seatlayer-android`](https://github.com/seatlayer/seatlayer-android) |
+| Flutter | [`seatlayer_flutter`](https://github.com/seatlayer/seatlayer-flutter) |
+| Python (server) | [`seatlayer`](https://github.com/seatlayer/seatlayer-python) |
+
+## Development
+
+```bash
+pnpm install
+pnpm validate   # typecheck, tests, build, publint + attw
+```
 
 ## License
 
