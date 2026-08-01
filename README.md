@@ -267,6 +267,8 @@ Full reference: [docs.seatlayer.io/server-api](https://docs.seatlayer.io/server-
 | PHP (server) | [`seatlayer/seatlayer-php`](https://github.com/seatlayer/seatlayer-php) |
 | Java (server) | [`io.seatlayer:seatlayer-java`](https://github.com/seatlayer/seatlayer-java) |
 | Go (server) | [`github.com/seatlayer/seatlayer-go`](https://github.com/seatlayer/seatlayer-go) |
+| Ruby (server) | [`seatlayer`](https://github.com/seatlayer/seatlayer-ruby) |
+| .NET (server) | [`SeatLayer`](https://github.com/seatlayer/seatlayer-dotnet) |
 
 ## Development
 
