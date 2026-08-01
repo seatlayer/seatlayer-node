@@ -4,6 +4,9 @@
 
 First release of the SeatLayer Node server SDK.
 
+- `inventory.extendHold` — keep a server-side hold alive past the checkout window.
+- `charts.list` / `events.list` take `limit` and `cursor`; `listAll()` pages transparently as an
+  async iterator and skips the per-event availability fanout.
 - `SeatLayer` client with secret-key auth, per-attempt timeouts, and a typed escape hatch.
 - Resources: `charts`, `events`, `inventory`, `sessions`, `webhooks`, `workspaces`.
 - Automatic `Idempotency-Key` on every mutation, reused across retries so a retried

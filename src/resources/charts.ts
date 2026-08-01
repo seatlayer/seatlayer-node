@@ -1,6 +1,21 @@
 import type { HttpClient } from '../http.js';
 import type { Chart, ChartMeta } from '../types.js';
 
+export interface ChartListOptions {
+  workspaceId?: string;
+  externalRef?: string;
+  archived?: boolean;
+  /** Page size. Clamped server-side; asking for more is not an error. */
+  limit?: number;
+  cursor?: string;
+}
+
+export interface ChartPage {
+  charts: ChartMeta[];
+  /** Absent once the list is exhausted. */
+  nextCursor?: string;
+}
+
 /**
  * Charts are the seat-map definitions events are created from.
  *
@@ -16,14 +31,38 @@ export class Charts {
     this.#http = http;
   }
 
-  list(options: { workspaceId?: string; externalRef?: string; archived?: boolean } = {}): Promise<{ charts: ChartMeta[] }> {
+  /**
+   * One page of charts. Pass `cursor` from the previous page's `nextCursor`;
+   * its absence means the list is exhausted.
+   */
+  list(options: ChartListOptions = {}): Promise<ChartPage> {
     return this.#http.get('/v1/charts', {
       query: {
         workspaceId: options.workspaceId,
         externalRef: options.externalRef,
+        limit: options.limit,
+        cursor: options.cursor,
         ...(options.archived ? { archived: '1' } : {}),
       },
     });
+  }
+
+  /**
+   * Every chart, paging transparently.
+   *
+   * An async iterator rather than an array: the whole point of paginating was
+   * to stop loading an unbounded list into memory, and returning `ChartMeta[]`
+   * would hand that problem straight back to the caller.
+   *
+   *   for await (const chart of seatlayer.charts.listAll()) { … }
+   */
+  async *listAll(options: Omit<ChartListOptions, 'cursor'> = {}): AsyncGenerator<ChartMeta> {
+    let cursor: string | undefined;
+    do {
+      const page = await this.list({ ...options, cursor });
+      for (const chart of page.charts) yield chart;
+      cursor = page.nextCursor;
+    } while (cursor);
   }
 
   create(params: {

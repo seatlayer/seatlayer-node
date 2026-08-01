@@ -205,3 +205,58 @@ describe('charts', () => {
     expect(JSON.parse(call(0).body).expectedUpdatedAt).toBe(1234);
   });
 });
+
+describe('pagination', () => {
+  it('walks every page with listAll and stops when the cursor runs out', async () => {
+    const { sdk, calls } = client([
+      { status: 200, body: { charts: [{ id: 'c_1' }, { id: 'c_2' }], nextCursor: 'cur_1' } },
+      { status: 200, body: { charts: [{ id: 'c_3' }] } },
+    ]);
+
+    const seen: string[] = [];
+    for await (const chart of sdk.charts.listAll({ limit: 2 })) seen.push(chart.id);
+
+    expect(seen).toEqual(['c_1', 'c_2', 'c_3']);
+    expect(calls).toHaveLength(2);
+    // Absent nextCursor terminates — a caller looping on it cannot spin forever.
+    expect(String(calls[1]!.url)).toContain('cursor=cur_1');
+  });
+
+  it('does not ask for per-event counts when walking the whole catalogue', async () => {
+    // Counts cost a server round-trip PER EVENT, which is exactly the cost
+    // pagination was added to avoid.
+    const { sdk, call } = client([{ status: 200, body: { events: [] } }]);
+    for await (const _ of sdk.events.listAll()) { /* drain */ }
+    expect(call(0).url).toContain('counts=0');
+  });
+
+  it('keeps counts on a single explicit page', async () => {
+    const { sdk, call } = client([{ status: 200, body: { events: [] } }]);
+    await sdk.events.list({ limit: 10 });
+    expect(call(0).url).not.toContain('counts=0');
+  });
+
+  it('passes limit and cursor through verbatim', async () => {
+    const { sdk, call } = client([{ status: 200, body: { charts: [] } }]);
+    await sdk.charts.list({ limit: 25, cursor: 'abc' });
+    expect(call(0).url).toContain('limit=25');
+    expect(call(0).url).toContain('cursor=abc');
+  });
+});
+
+describe('extendHold', () => {
+  it('posts the hold id to the extend route', async () => {
+    const { sdk, call } = client([{ status: 200, body: { ok: true, expiresAt: 123 } }]);
+    await sdk.inventory.extendHold('ev_1', { holdId: 'h_9', ttlMs: 600_000 });
+
+    expect(call(0).url).toBe('https://api.seatlayer.io/v1/events/ev_1/extend');
+    expect(JSON.parse(call(0).body)).toEqual({ holdId: 'h_9', ttlMs: 600_000 });
+  });
+
+  it('surfaces a spent hold as a conflict, not a generic failure', async () => {
+    const { sdk } = client([{ status: 409, body: { error: 'cannot_extend', reason: 'expired' } }]);
+    const error = await sdk.inventory.extendHold('ev_1', { holdId: 'h_9' }).catch((e) => e);
+    expect(error).toBeInstanceOf(SeatLayerConflictError);
+    expect(error.code).toBe('cannot_extend');
+  });
+});

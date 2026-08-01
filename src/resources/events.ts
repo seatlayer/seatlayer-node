@@ -1,6 +1,22 @@
 import type { HttpClient } from '../http.js';
 import type { EventMeta } from '../types.js';
 
+export interface EventListOptions {
+  workspaceId?: string;
+  externalRef?: string;
+  /** Page size. Clamped server-side; asking for more is not an error. */
+  limit?: number;
+  cursor?: string;
+  /** Include live availability counts. One server round-trip per event. */
+  counts?: boolean;
+}
+
+export interface EventPage {
+  events: EventMeta[];
+  /** Absent once the list is exhausted. */
+  nextCursor?: string;
+}
+
 export class Events {
   #http: HttpClient;
 
@@ -8,10 +24,40 @@ export class Events {
     this.#http = http;
   }
 
-  list(options: { workspaceId?: string; externalRef?: string } = {}): Promise<{ events: EventMeta[] }> {
+  /**
+   * One page of events. Pass `cursor` from the previous page's `nextCursor`.
+   *
+   * Live availability `counts` cost one round-trip per event server-side. They
+   * are included by default because most callers want them; pass
+   * `counts: false` when paging a whole catalogue, where you almost certainly
+   * do not.
+   */
+  list(options: EventListOptions = {}): Promise<EventPage> {
     return this.#http.get('/v1/events', {
-      query: { workspaceId: options.workspaceId, externalRef: options.externalRef },
+      query: {
+        workspaceId: options.workspaceId,
+        externalRef: options.externalRef,
+        limit: options.limit,
+        cursor: options.cursor,
+        ...(options.counts === false ? { counts: '0' } : {}),
+      },
     });
+  }
+
+  /**
+   * Every event, paging transparently. Defaults to `counts: false` — you are
+   * walking the whole list, so per-event availability is rarely what you want
+   * and always what it costs.
+   *
+   *   for await (const event of seatlayer.events.listAll()) { … }
+   */
+  async *listAll(options: Omit<EventListOptions, 'cursor'> = {}): AsyncGenerator<EventMeta> {
+    let cursor: string | undefined;
+    do {
+      const page = await this.list({ counts: false, ...options, cursor });
+      for (const event of page.events) yield event;
+      cursor = page.nextCursor;
+    } while (cursor);
   }
 
   create(params: {

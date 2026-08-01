@@ -71,6 +71,47 @@ await seatlayer.inventory.bookBestAvailable(eventKey, { qty: 2, bookingRef: 'pho
 await seatlayer.inventory.boxOfficeBook(eventKey, { labels: ['A-1', 'A-2'], bookingRef: 'comp-14' });
 ```
 
+## Listing and pagination
+
+`list()` returns one page plus a `nextCursor`. When you want everything, `listAll()` pages for you
+and yields as it goes — an async iterator rather than an array, because the point of paginating is
+to *not* hold an unbounded list in memory.
+
+```ts
+// One page, your own paging.
+const page = await seatlayer.events.list({ limit: 50 });
+page.events;      // EventMeta[]
+page.nextCursor;  // undefined once exhausted
+
+// Or let the SDK walk it.
+for await (const event of seatlayer.events.listAll()) {
+  await sync(event);
+}
+```
+
+Listing events includes live availability `counts` by default, which costs the server one
+round-trip **per event**. `listAll()` turns them off automatically — walking a whole catalogue is
+exactly when you don't want that — and you can control it explicitly:
+
+```ts
+await seatlayer.events.list({ limit: 50, counts: false });
+```
+
+## Keeping a hold alive
+
+When an order takes longer than the checkout window — an invoice, a phone sale — extend rather than
+release and re-hold. Releasing first hands the seats to whoever is racing for them in between.
+
+```ts
+try {
+  await seatlayer.inventory.extendHold(eventKey, { holdId, ttlMs: 10 * 60_000 });
+} catch (error) {
+  if (error instanceof SeatLayerConflictError) {
+    // Gone, expired, or at its renewal cap — the buyer has to re-pick.
+  }
+}
+```
+
 ## Embedding the control room
 
 Your secret key never reaches a browser. Mint a scoped token instead and hand that to the widget.
@@ -116,9 +157,9 @@ app.post('/webhooks/seatlayer', express.raw({ type: 'application/json' }), (req,
       secret: process.env.SEATLAYER_WEBHOOK_SECRET!,
     });
 
-    // Deliveries are signed over the body only — there is no timestamp header
-    // and no tolerance window, so a captured delivery stays valid. Deduplicate
-    // on occurrenceId; this is your replay protection.
+    // The signed body carries `at`, but nothing enforces a freshness window,
+    // so a captured delivery stays valid indefinitely. Deduplicate on
+    // occurrenceId — this is your replay protection, not an optimisation.
     if (await alreadyProcessed(event.occurrenceId)) return res.sendStatus(200);
 
     await handle(event);
@@ -191,9 +232,9 @@ await seatlayer.request('POST', '/v1/events/ev_1/some-new-route', { body: { … 
 
 | Resource | Methods |
 | --- | --- |
-| `charts` | `list` `create` `retrieve` `update` `delete` `copy` `archive` `unarchive` `publish` |
-| `events` | `list` `create` `retrieve` `update` `delete` `updateChart` `close` `reopen` `archive` `retrieveHoldTtl` `updateHoldTtl` `retrieveReport` `retrieveLog` |
-| `inventory` | `hold` `holdBestAvailable` `bookBestAvailable` `retrieveHold` `release` `book` `boxOfficeBook` `unbook` `block` `unblock` `unblockAll` `retrieveAvailability` `updateAvailability` |
+| `charts` | `list` `listAll` `create` `retrieve` `update` `delete` `copy` `archive` `unarchive` `publish` |
+| `events` | `list` `listAll` `create` `retrieve` `update` `delete` `updateChart` `close` `reopen` `archive` `retrieveHoldTtl` `updateHoldTtl` `retrieveReport` `retrieveLog` |
+| `inventory` | `hold` `holdBestAvailable` `bookBestAvailable` `extendHold` `retrieveHold` `release` `book` `boxOfficeBook` `unbook` `block` `unblock` `unblockAll` `retrieveAvailability` `updateAvailability` |
 | `sessions` | `createManageSession` `revokeManageSession` `createDesignerSession` `revokeDesignerSession` |
 | `webhooks` | `list` `create` `update` `delete` `listDeliveries` |
 | `workspaces` | `list` `create` `retrieve` `update` |

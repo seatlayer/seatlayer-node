@@ -74,6 +74,22 @@ export class Inventory {
     });
   }
 
+  /**
+   * Push an active hold's expiry out by a fresh window before it lapses.
+   *
+   * Use this rather than release-and-re-hold when an order is taking longer
+   * than the checkout window — invoiced sales, a phone order on hold. Releasing
+   * first hands the seats to whoever is racing for them in between. The server
+   * clamps the window and the DO caps how many times one hold can be renewed;
+   * a hold that is gone, expired, or at its cap answers 409 `cannot_extend`.
+   */
+  extendHold(eventKey: string, params: {
+    holdId: string;
+    ttlMs?: number;
+  }): Promise<HoldResult> {
+    return this.#http.post(this.#path(eventKey, '/extend'), { body: params });
+  }
+
   /** Authoritative items and prices for a hold. Charge from this, not the browser. */
   retrieveHold(eventKey: string, holdId: string): Promise<{ items: HoldLineItem[]; expiresAt: number; currency: string }> {
     return this.#http.get(this.#path(eventKey, `/holds/${encodeURIComponent(holdId)}`));
