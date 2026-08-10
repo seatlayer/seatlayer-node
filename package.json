@@ -1,7 +1,7 @@
 {
   "name": "@seatlayer/server",
-  "version": "0.1.0",
-  "description": "Official Node.js server SDK for the SeatLayer reserved-seating API. Secret-key only — never ship this to a browser.",
+  "version": "0.2.0",
+  "description": "Official Node.js server SDK for SeatLayer inventory, holds, booking references, allocations, and reports. Secret-key only.",
   "license": "MIT",
   "homepage": "https://docs.seatlayer.io/server-api/",
   "repository": {
@@ -55,7 +55,7 @@
     "reserved-seating",
     "seating-chart",
     "ticketing",
-    "box-office",
+    "inventory-management",
     "server-sdk",
     "seat-map"
   ],

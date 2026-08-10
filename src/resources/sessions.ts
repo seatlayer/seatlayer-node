@@ -19,9 +19,9 @@ export class Sessions {
    * Mint a manage-session token for the control room.
    *
    * `capabilities` is required here even though the API defaults it. That
-   * default grants all four — including `event:cancel`, which un-books paid
-   * inventory. Granting the ability to reverse sales by forgetting an argument
-   * is not a default worth inheriting, so this SDK makes you say it.
+   * default grants all four — including `event:cancel`, which releases booked
+   * inventory. Granting cancellation authority by forgetting an argument is
+   * not a default worth inheriting, so this SDK makes you say it.
    *
    * `allowedOrigin` must be an https origin; the token is bound to it.
    */
@@ -37,7 +37,7 @@ export class Sessions {
     if (!params.capabilities?.length) {
       throw new TypeError(
         'capabilities is required: pass the smallest set the page needs, e.g. ["event:view"]. '
-        + 'Omitting it server-side grants event:cancel, which can reverse paid bookings.',
+        + 'Omitting it server-side grants event:cancel, which can release booked inventory.',
       );
     }
     return this.#http.post(`/v1/events/${encodeURIComponent(eventKey)}/manage-sessions`, {

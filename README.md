@@ -6,6 +6,12 @@ Official Node.js server SDK for the [SeatLayer](https://seatlayer.io) reserved-s
 > browser, a mobile app, or anything a ticket buyer can open. Browser surfaces get short-lived,
 > origin-bound tokens that you mint here — see [Embedding the control room](#embedding-the-control-room).
 
+This SDK is the **Platform inventory** product. SeatLayer owns seating state, configured prices,
+holds, booking concurrency, the inventory ledger, allocation reporting, and inventory webhooks.
+Your platform owns its event catalogue, buyer accounts, payments, commercial Orders, tickets,
+email/PDF delivery, refunds, scanning, and customer support. No booking method in this package
+accepts buyer, payment, ticket, email, or refund data.
+
 ## Install
 
 ```bash
@@ -32,9 +38,9 @@ const { meta: event } = await seatlayer.events.create({
   startsAt: Date.parse('2026-09-12T19:30:00Z'),
 });
 
-// 3. Sell four seats over the phone.
+// 3. Reserve four seats for an order in your own commerce system.
 const held = await seatlayer.inventory.holdBestAvailable(event.key, { qty: 4 });
-// … take payment against held.items, which carry authoritative prices …
+// … your system takes payment against held.items' authoritative configured prices …
 await seatlayer.inventory.book(event.key, { holdId: held.holdId, bookingRef: 'order-8842' });
 ```
 
@@ -51,7 +57,7 @@ if (process.env.NODE_ENV === 'production' && seatlayer.mode !== 'live') {
 }
 ```
 
-## The two selling flows
+## The two inventory-confirmation flows
 
 **Buyer picks seats in the browser.** Your frontend holds them; your backend confirms the price and
 books. Never price from what the browser sent you — `retrieveHold` is the authoritative answer.
@@ -63,15 +69,73 @@ const total = hold.items.reduce((sum, item) => sum + item.unitPrice, 0);
 await seatlayer.inventory.book(eventKey, { holdId, bookingRef: charge.id });
 ```
 
-**Your backend picks the seats.** Phone orders, box office, comps. No browser involved.
+**Your backend picks the seats.** Marketplace orders, phone orders, or comps. No browser involved.
 
 ```ts
 // Payment already taken — book outright, so nothing is stranded if a second call fails.
 await seatlayer.inventory.bookBestAvailable(eventKey, { qty: 2, bookingRef: 'phone-1183' });
 
 // Or name the seats yourself.
-await seatlayer.inventory.boxOfficeBook(eventKey, { labels: ['A-1', 'A-2'], bookingRef: 'comp-14' });
+await seatlayer.inventory.book(eventKey, { labels: ['A-1', 'A-2'], bookingRef: 'comp-14' });
 ```
+
+`bookingRef` is your stable join between SeatLayer inventory and your own commercial order. The SDK
+trims it, refuses an empty value before making a request, and echoes the normalized reference in
+booking and cancellation results. It is not a SeatLayer Order id.
+
+## Booking History
+
+Booking History is the inventory ledger, not a commerce or fulfilment record. It contains labels,
+category/section/channel attribution, quantities, configured-value snapshots, and lifecycle events.
+It never contains buyer, payment, ticket, email, refund, or Door fields.
+
+```ts
+const page = await seatlayer.inventory.listBookings(eventKey, {
+  q: 'A-12',
+  state: 'booked',
+  limit: 50,
+});
+
+const detail = await seatlayer.inventory.retrieveBooking(
+  eventKey,
+  page.bookings[0].bookingRef,
+);
+```
+
+To release booked inventory, first update the commercial/refund state in your own system as your
+workflow requires, then cancel with the same reference that booked it:
+
+```ts
+await seatlayer.inventory.unbook(eventKey, {
+  labels: ['A-12'],
+  bookingRef: 'order-8842',
+});
+```
+
+SeatLayer releases inventory and records the lifecycle entry; it does not move or refund money,
+void a platform-owned ticket, send an email/PDF, or update a platform-owned scanner.
+
+## Private allocations
+
+`seatlayer.channels` manages event allocations and mints short-lived buyer access for a browser.
+A channel id is routing/reporting metadata, never authority. Authenticate the buyer in your own
+backend, then mint an event- and origin-bound bearer:
+
+```ts
+const access = await seatlayer.channels.createBuyerAccessSession(eventKey, {
+  channelIds: ['chn_partner_a'],
+  includePublic: false,
+  allowedOrigin: 'https://tickets.marketplace.example',
+  buyerRef: 'buyer_318',
+});
+
+// Return only access.token + access.expiresAt to the browser. Never the secret key.
+```
+
+Channel reports use `bookedValue` and `includesBookedValue` for configured-price snapshots. The
+older `revenue` and `includesRevenue` response fields remain deprecated aliases for one
+compatibility window. Managed SeatLayer hosted-link fulfilment is intentionally outside this
+Platform SDK resource.
 
 ## Listing and pagination
 
@@ -127,8 +191,8 @@ const session = await seatlayer.sessions.createManageSession(eventKey, {
 ```
 
 `capabilities` is **required** by this SDK even though the API defaults it. That default grants all
-four capabilities including `event:cancel`, which reverses paid bookings — not something that should
-arrive by forgetting an argument. Grant the smallest set the page needs.
+four original inventory capabilities including `event:cancel`, which releases booked inventory —
+not something that should arrive by forgetting an argument. Grant the smallest set the page needs.
 
 The same pattern embeds the Designer in your own UI:
 
@@ -211,7 +275,11 @@ one, and **reused across retries** so a retried booking cannot become two bookin
 order id when you want end-to-end deduplication:
 
 ```ts
-await seatlayer.inventory.book(eventKey, { holdId }, { idempotencyKey: `order-${orderId}` });
+await seatlayer.inventory.book(
+  eventKey,
+  { holdId, bookingRef: orderId },
+  { idempotencyKey: `order-${orderId}` },
+);
 ```
 
 ```ts
@@ -236,7 +304,8 @@ await seatlayer.request('POST', '/v1/events/ev_1/some-new-route', { body: { … 
 | --- | --- |
 | `charts` | `list` `listAll` `create` `retrieve` `update` `delete` `copy` `archive` `unarchive` `publish` |
 | `events` | `list` `listAll` `create` `retrieve` `update` `delete` `updateChart` `close` `reopen` `archive` `retrieveHoldTtl` `updateHoldTtl` `retrieveReport` `retrieveLog` |
-| `inventory` | `hold` `holdBestAvailable` `bookBestAvailable` `extendHold` `retrieveHold` `release` `book` `boxOfficeBook` `unbook` `block` `unblock` `unblockAll` `retrieveAvailability` `updateAvailability` |
+| `inventory` | `hold` `holdBestAvailable` `bookBestAvailable` `extendHold` `retrieveHold` `release` `book` `unbook` `listBookings` `retrieveBooking` `block` `unblock` `unblockAll` `retrieveAvailability` `updateAvailability` |
+| `channels` | `listChannels` `createChannel` `updateChannel` `updateChannelAssignments` `listChannelAllocation` `retrieveChannelAccessPreview` `retrieveChannelReport` `pauseChannel` `unpauseChannel` `archiveChannel` `createBuyerAccessSession` `listBuyerAccessSessions` `revokeBuyerAccessSession` |
 | `sessions` | `createManageSession` `revokeManageSession` `createDesignerSession` `revokeDesignerSession` |
 | `webhooks` | `list` `create` `update` `delete` `listDeliveries` |
 | `workspaces` | `list` `create` `retrieve` `update` |

@@ -198,6 +198,161 @@ describe('sessions', () => {
   });
 });
 
+describe('platform inventory contract', () => {
+  it('whitelists hold input so wider caller objects cannot transmit commerce data', async () => {
+    const { sdk, call } = client([{
+      status: 201,
+      body: { ok: true, holdId: 'h_1', expiresAt: 123, items: [] },
+    }]);
+    const callerObject = {
+      labels: ['A-1'],
+      buyerEmail: 'not-sent@example.com',
+      paymentId: 'pay_not_sent',
+      ticketDelivery: 'email',
+      refundRequested: true,
+    };
+
+    await sdk.inventory.hold('ev_1', callerObject);
+
+    expect(JSON.parse(call(0).body)).toEqual({ labels: ['A-1'] });
+  });
+
+  it('requires and preserves the caller-owned bookingRef without commerce fields', async () => {
+    const { sdk, call } = client([{ status: 200, body: { ok: true, booked: ['A-1'] } }]);
+    // Structural TypeScript inputs can carry extra properties through a wider
+    // variable. The SDK must whitelist its wire body rather than rely only on
+    // excess-property checks to keep commerce/PII out of the request.
+    const callerObject = {
+      labels: ['A-1'],
+      bookingRef: '  marketplace-order-42  ',
+      buyerEmail: 'not-sent@example.com',
+      paymentId: 'pay_not_sent',
+      ticketDelivery: 'email',
+      refundRequested: true,
+    };
+
+    const result = await sdk.inventory.book('ev_1', callerObject);
+
+    expect(result).toEqual({ ok: true, booked: ['A-1'], bookingRef: 'marketplace-order-42' });
+    expect(JSON.parse(call(0).body)).toEqual({
+      labels: ['A-1'],
+      bookingRef: 'marketplace-order-42',
+    });
+    expect(call(0).body).not.toMatch(/buyer|orderId|payment|ticket|email|refund/i);
+  });
+
+  it('cancels inventory against the same stable reference', async () => {
+    const { sdk, call } = client([{ status: 200, body: { ok: true, unbooked: ['A-1'] } }]);
+
+    const result = await sdk.inventory.unbook('ev_1', {
+      labels: ['A-1'],
+      bookingRef: 'marketplace-order-42',
+    });
+
+    expect(result.bookingRef).toBe('marketplace-order-42');
+    expect(JSON.parse(call(0).body)).toEqual({
+      labels: ['A-1'],
+      bookingRef: 'marketplace-order-42',
+    });
+  });
+
+  it('rejects a blank bookingRef before making a request', async () => {
+    const { sdk, calls } = client([]);
+    await expect(sdk.inventory.book('ev_1', {
+      labels: ['A-1'],
+      bookingRef: '   ',
+    })).rejects.toThrow(/bookingRef is required/);
+    expect(calls).toHaveLength(0);
+  });
+
+  it('lists and retrieves inventory Booking History without using Orders routes', async () => {
+    const { sdk, call } = client([
+      { status: 200, body: { bookings: [], nextCursor: null } },
+      {
+        status: 200,
+        body: {
+          booking: { bookingRef: 'marketplace/order 42', objects: [] },
+          activity: [],
+          activityTruncated: false,
+        },
+      },
+    ]);
+
+    await sdk.inventory.listBookings('ev_1', {
+      q: 'A-1', state: 'booked', cursor: 'next', limit: 25,
+    });
+    const detail = await sdk.inventory.retrieveBooking('ev_1', 'marketplace/order 42');
+
+    expect(call(0).url).toBe(
+      'https://api.seatlayer.io/v1/events/ev_1/bookings?q=A-1&state=booked&cursor=next&limit=25',
+    );
+    expect(call(1).url).toBe(
+      'https://api.seatlayer.io/v1/events/ev_1/bookings/marketplace%2Forder%2042',
+    );
+    expect(detail.booking.bookingRef).toBe('marketplace/order 42');
+  });
+});
+
+describe('sales channels', () => {
+  it('mints an explicitly scoped buyer session through the server surface', async () => {
+    const { sdk, call } = client([{ status: 201, body: {
+      sessionId: 'bas_1', token: 'bse_secret', expiresAt: 1, eventKey: 'ev_1',
+      includePublic: false, maxQuantity: 4,
+    } }]);
+
+    await sdk.channels.createBuyerAccessSession('ev_1', {
+      channelIds: ['chn_agency'],
+      includePublic: false,
+      allowedOrigin: 'https://agency.example',
+      buyerRef: 'buyer_1',
+      clientRequestId: 'access_1',
+    });
+
+    expect(call(0).url).toBe('https://api.seatlayer.io/v1/events/ev_1/buyer-access-sessions');
+    expect(JSON.parse(call(0).body)).toMatchObject({
+      channelIds: ['chn_agency'], includePublic: false, allowedOrigin: 'https://agency.example',
+    });
+    expect(call(0).headers.Authorization).toBe('Bearer sk_test_abc');
+  });
+
+  it('keeps allocation writes versioned and exposes canonical booked value', async () => {
+    const { sdk, call } = client([
+      { status: 200, body: { ok: true } },
+      {
+        status: 200,
+        body: {
+          report: {
+            assignmentVersion: 7,
+            includesBookedValue: true,
+            includesRevenue: true,
+            rows: [],
+            totals: { bookedValue: 125, revenue: 125 },
+          },
+          event: { key: 'ev_1' },
+        },
+      },
+    ]);
+
+    await sdk.channels.updateChannelAssignments('ev_1', {
+      targetChannelId: 'chn_agency', labels: ['A-1'], assignmentVersion: 7,
+    });
+    const report = await sdk.channels.retrieveChannelReport('ev_1');
+
+    expect(JSON.parse(call(0).body)).toMatchObject({
+      targetChannelId: 'chn_agency', assignmentVersion: 7,
+    });
+    expect(call(1).url).toBe('https://api.seatlayer.io/v1/events/ev_1/channels/report');
+    expect(report.report.includesBookedValue).toBe(true);
+    expect(report.report.includesRevenue).toBe(true);
+    expect(report.report.totals.bookedValue).toBe(125);
+  });
+
+  it('does not expose Managed hosted-link fulfilment from the Platform resource', () => {
+    const { sdk } = client([]);
+    expect('createAccessLink' in sdk.channels).toBe(false);
+  });
+});
+
 describe('charts', () => {
   it('requires expectedUpdatedAt on update, at the type level and on the wire', async () => {
     const { sdk, call } = client([{ status: 200, body: { meta: {} } }]);

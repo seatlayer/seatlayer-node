@@ -1,6 +1,27 @@
 # Changelog
 
-## 0.1.0 — unreleased
+## 0.2.0 — unreleased
+
+- Establish the Platform inventory boundary: booking, cancellation, reporting,
+  and webhooks contain no SeatLayer-owned buyer, payment, commercial Order,
+  ticket, email/PDF, refund, Door, or customer-support workflow.
+- Require a caller-owned `bookingRef` for every booking and cancellation. The
+  SDK normalizes and echoes it so callers can reconcile inventory with their
+  own order ledger safely.
+- Add typed `inventory.listBookings` and `inventory.retrieveBooking` helpers
+  for inventory Booking History, including immutable configured-value and
+  lifecycle snapshots. Public-manifest operation-id aliases are also exported.
+- Add `channels` for channel CRUD, versioned allocations, access previews,
+  channel reporting, and buyer-access-session mint/list/revoke. Managed hosted
+  access-link fulfilment is intentionally not exposed by this Platform resource.
+- Use `bookedValue` and `includesBookedValue` as the canonical configured-price
+  reporting fields. `bookedRevenue`, `revenue`, and `includesRevenue` remain
+  deprecated response aliases for compatibility.
+- Deprecate `inventory.boxOfficeBook`; Platform callers should use
+  `inventory.book({ labels, bookingRef })`. Managed box-office commerce does not
+  belong to this SDK.
+
+## 0.1.0
 
 First release of the SeatLayer Node server SDK.
 
@@ -18,5 +39,5 @@ First release of the SeatLayer Node server SDK.
   `SeatLayerNotFoundError`, `SeatLayerConnectionError`.
 - `verifyWebhook` — raw-body HMAC-SHA256 verification with constant-time comparison.
 - `createManageSession` requires explicit `capabilities`; the API's default grants
-  `event:cancel`, which reverses paid bookings.
+  `event:cancel`, which releases booked inventory.
 - Constructor rejects a `pk_` key by name rather than failing as a 401 later.

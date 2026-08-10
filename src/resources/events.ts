@@ -1,5 +1,5 @@
 import type { HttpClient } from '../http.js';
-import type { EventMeta } from '../types.js';
+import type { EventMeta, EventReportResult } from '../types.js';
 
 export interface EventListOptions {
   workspaceId?: string;
@@ -114,7 +114,7 @@ export class Events {
     });
   }
 
-  retrieveReport(eventKey: string): Promise<unknown> {
+  retrieveReport(eventKey: string): Promise<EventReportResult> {
     return this.#http.get(`/v1/events/${encodeURIComponent(eventKey)}/report`);
   }
 

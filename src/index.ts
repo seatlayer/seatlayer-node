@@ -6,6 +6,7 @@
  */
 import { HttpClient, type ClientOptions } from './http.js';
 import { Charts } from './resources/charts.js';
+import { Channels } from './resources/channels.js';
 import { Events } from './resources/events.js';
 import { Inventory } from './resources/inventory.js';
 import { Sessions } from './resources/sessions.js';
@@ -14,6 +15,7 @@ import { Workspaces } from './resources/workspaces.js';
 
 export class SeatLayer {
   readonly charts: Charts;
+  readonly channels: Channels;
   readonly events: Events;
   readonly inventory: Inventory;
   readonly sessions: Sessions;
@@ -31,6 +33,7 @@ export class SeatLayer {
     this.mode = this.#http.mode;
 
     this.charts = new Charts(this.#http);
+    this.channels = new Channels(this.#http);
     this.events = new Events(this.#http);
     this.inventory = new Inventory(this.#http);
     this.sessions = new Sessions(this.#http);
@@ -64,6 +67,23 @@ export {
   type ApiErrorBody,
 } from './errors.js';
 export type { ClientOptions, RequestOptions } from './http.js';
+export type {
+  AccessSource,
+  BuyerAccessSession,
+  BuyerAccessSessionRecord,
+  Channel,
+  ChannelAccess,
+  ChannelAccessIntent,
+  ChannelAssignmentResult,
+  ChannelCounts,
+  ChannelListResult,
+  ChannelReport,
+  ChannelReportResult,
+  ChannelState,
+  ChannelWithCounts,
+  CreateBuyerAccessSessionParams,
+} from './resources/channels.js';
+export { PUBLIC_CHANNEL_ID } from './resources/channels.js';
 export type * from './types.js';
 
 export default SeatLayer;

@@ -1,5 +1,27 @@
 import type { HttpClient } from '../http.js';
-import type { BookResult, HoldLineItem, HoldResult } from '../types.js';
+import type {
+  BookBestAvailableParams,
+  BookBestAvailableResult,
+  BookParams,
+  BookResult,
+  HoldBestAvailableParams,
+  HoldParams,
+  HoldResult,
+  InventoryBookingDetail,
+  InventoryBookingsPage,
+  InventoryBookingsQuery,
+  RetrieveHoldResult,
+  UnbookParams,
+  UnbookResult,
+} from '../types.js';
+
+function normalizedBookingRef(value: string): string {
+  const bookingRef = value.trim();
+  if (!bookingRef) {
+    throw new TypeError('bookingRef is required and must be a non-empty stable reference.');
+  }
+  return bookingRef;
+}
 
 /**
  * Holds, booking, blocking, availability.
@@ -23,15 +45,17 @@ export class Inventory {
     return `/v1/events/${encodeURIComponent(eventKey)}${suffix}`;
   }
 
-  hold(eventKey: string, params: {
-    labels?: string[];
-    selections?: Array<{ label: string; tierId?: string | null; quantity?: number }>;
-    /** Overrides the event's checkout window for this hold. */
-    ttlMs?: number;
-    replaceHoldId?: string;
-  }, options: { idempotencyKey?: string } = {}): Promise<HoldResult> {
+  hold(eventKey: string, params: HoldParams, options: { idempotencyKey?: string } = {}): Promise<HoldResult> {
     return this.#http.post(this.#path(eventKey, '/hold'), {
-      body: params,
+      body: {
+        labels: params.labels,
+        selections: params.selections,
+        ttlMs: params.ttlMs,
+        replaceHoldId: params.replaceHoldId,
+        channelIds: params.channelIds,
+        ignoreChannelRestrictions: params.ignoreChannelRestrictions,
+        reason: params.reason,
+      },
       idempotencyKey: options.idempotencyKey,
     });
   }
@@ -39,47 +63,63 @@ export class Inventory {
   /**
    * Ask us to pick the best free objects and hold them.
    *
-   * The picker is the same one the buyer widget uses, so a phone order and a
-   * web order get the same answer for the same inventory. `qty` above the
+   * The picker is the same one the browser widget uses, so backend and browser
+   * selection get the same answer for the same inventory. `qty` above the
    * server cap is clamped, not rejected.
    */
-  holdBestAvailable(eventKey: string, params: {
-    qty: number;
-    categoryKey?: string;
-    zoneId?: string;
-    ttlMs?: number;
-  }, options: { idempotencyKey?: string } = {}): Promise<HoldResult> {
+  holdBestAvailable(
+    eventKey: string,
+    params: HoldBestAvailableParams,
+    options: { idempotencyKey?: string } = {},
+  ): Promise<HoldResult> {
     return this.#http.post(this.#path(eventKey, '/best-available'), {
-      body: params,
+      body: {
+        qty: params.qty,
+        categoryKey: params.categoryKey,
+        zoneId: params.zoneId,
+        ttlMs: params.ttlMs,
+        channelIds: params.channelIds,
+        ignoreChannelRestrictions: params.ignoreChannelRestrictions,
+        reason: params.reason,
+      },
       idempotencyKey: options.idempotencyKey,
     });
   }
 
   /**
-   * Pick and book in one call — the box-office shape, where payment is already
-   * taken and there is no buyer session to hold against.
+   * Pick and book in one call for a caller-owned commerce flow that is ready to
+   * commit inventory and has no browser hold to confirm.
    *
    * Prefer this over holdBestAvailable-then-book for that case: a failure
    * between the two calls would strand inventory until the TTL expired.
    */
-  bookBestAvailable(eventKey: string, params: {
-    qty: number;
-    bookingRef: string;
-    categoryKey?: string;
-    zoneId?: string;
-  }, options: { idempotencyKey?: string } = {}): Promise<BookResult> {
-    return this.#http.post(this.#path(eventKey, '/best-available-book'), {
-      body: params,
+  async bookBestAvailable(
+    eventKey: string,
+    params: BookBestAvailableParams,
+    options: { idempotencyKey?: string } = {},
+  ): Promise<BookBestAvailableResult> {
+    const bookingRef = normalizedBookingRef(params.bookingRef);
+    const result = await this.#http.post<BookBestAvailableResult>(this.#path(eventKey, '/best-available-book'), {
+      body: {
+        qty: params.qty,
+        bookingRef,
+        categoryKey: params.categoryKey,
+        zoneId: params.zoneId,
+        channelIds: params.channelIds,
+        ignoreChannelRestrictions: params.ignoreChannelRestrictions,
+        reason: params.reason,
+      },
       idempotencyKey: options.idempotencyKey,
     });
+    return { ...result, bookingRef };
   }
 
   /**
    * Push an active hold's expiry out by a fresh window before it lapses.
    *
-   * Use this rather than release-and-re-hold when an order is taking longer
-   * than the checkout window — invoiced sales, a phone order on hold. Releasing
-   * first hands the seats to whoever is racing for them in between. The server
+   * Use this rather than release-and-re-hold when the caller's checkout is
+   * taking longer than the hold window. Releasing first hands the inventory to
+   * whoever is racing for it in between. The server
    * clamps the window and the DO caps how many times one hold can be renewed;
    * a hold that is gone, expired, or at its cap answers 409 `cannot_extend`.
    */
@@ -91,41 +131,85 @@ export class Inventory {
   }
 
   /** Authoritative items and prices for a hold. Charge from this, not the browser. */
-  retrieveHold(eventKey: string, holdId: string): Promise<{ items: HoldLineItem[]; expiresAt: number; currency: string }> {
+  retrieveHold(eventKey: string, holdId: string): Promise<RetrieveHoldResult> {
     return this.#http.get(this.#path(eventKey, `/holds/${encodeURIComponent(holdId)}`));
   }
 
   /** Free a hold early. Requires both the labels and the hold id. */
   release(eventKey: string, params: { labels: string[]; holdId: string }): Promise<unknown> {
-    return this.#http.post(this.#path(eventKey, '/release'), { body: params });
-  }
-
-  book(eventKey: string, params: {
-    /** Book a held selection… */
-    holdId?: string;
-    /** …or book labels outright, with no prior hold. */
-    labels?: string[];
-    bookingRef?: string;
-  }, options: { idempotencyKey?: string } = {}): Promise<BookResult> {
-    return this.#http.post(this.#path(eventKey, '/book'), {
-      body: params,
-      idempotencyKey: options.idempotencyKey,
+    return this.#http.post(this.#path(eventKey, '/release'), {
+      body: { labels: params.labels, holdId: params.holdId },
     });
   }
 
-  boxOfficeBook(eventKey: string, params: {
-    labels: string[];
-    bookingRef: string;
-  }, options: { idempotencyKey?: string } = {}): Promise<BookResult> {
-    return this.#http.post(this.#path(eventKey, '/box-book'), {
-      body: params,
+  async book(
+    eventKey: string,
+    params: BookParams,
+    options: { idempotencyKey?: string } = {},
+  ): Promise<BookResult> {
+    const bookingRef = normalizedBookingRef(params.bookingRef);
+    const result = await this.#http.post<Omit<BookResult, 'bookingRef'>>(this.#path(eventKey, '/book'), {
+      body: {
+        labels: params.labels,
+        holdId: params.holdId,
+        bookingRef,
+        channelIds: params.channelIds,
+        ignoreChannelRestrictions: params.ignoreChannelRestrictions,
+        reason: params.reason,
+      },
       idempotencyKey: options.idempotencyKey,
+    });
+    return { ...result, bookingRef };
+  }
+
+  /** @deprecated Prefer `book({ labels, bookingRef })`; this is the legacy Platform direct-book route. */
+  async boxOfficeBook(
+    eventKey: string,
+    params: { labels: string[]; bookingRef: string },
+    options: { idempotencyKey?: string } = {},
+  ): Promise<BookResult> {
+    const bookingRef = normalizedBookingRef(params.bookingRef);
+    const result = await this.#http.post<Omit<BookResult, 'bookingRef'>>(this.#path(eventKey, '/box-book'), {
+      body: { labels: params.labels, bookingRef },
+      idempotencyKey: options.idempotencyKey,
+    });
+    return { ...result, bookingRef };
+  }
+
+  /** Release booked inventory. The caller remains responsible for any refund or fulfilment change. */
+  async unbook(eventKey: string, params: UnbookParams): Promise<UnbookResult> {
+    const bookingRef = normalizedBookingRef(params.bookingRef);
+    const result = await this.#http.post<Omit<UnbookResult, 'bookingRef'>>(this.#path(eventKey, '/unbook'), {
+      body: { labels: params.labels, bookingRef },
+    });
+    return { ...result, bookingRef };
+  }
+
+  /** One page of Platform inventory bookings, newest first. Not commercial Orders. */
+  listBookings(eventKey: string, query: InventoryBookingsQuery = {}): Promise<InventoryBookingsPage> {
+    return this.#http.get(this.#path(eventKey, '/bookings'), {
+      query: {
+        q: query.q,
+        state: query.state,
+        cursor: query.cursor,
+        limit: query.limit,
+      },
     });
   }
 
-  /** Reverse a booking. Requires a key with cancel authority. */
-  unbook(eventKey: string, params: { labels: string[] }): Promise<unknown> {
-    return this.#http.post(this.#path(eventKey, '/unbook'), { body: params });
+  /** One booking-reference-safe lifecycle with configured-value snapshots only. */
+  retrieveBooking(eventKey: string, bookingRef: string): Promise<InventoryBookingDetail> {
+    return this.#http.get(this.#path(eventKey, `/bookings/${encodeURIComponent(normalizedBookingRef(bookingRef))}`));
+  }
+
+  /** Public-manifest operation-id alias for `listBookings`. */
+  listInventoryBookings(eventKey: string, query: InventoryBookingsQuery = {}): Promise<InventoryBookingsPage> {
+    return this.listBookings(eventKey, query);
+  }
+
+  /** Public-manifest operation-id alias for `retrieveBooking`. */
+  retrieveInventoryBooking(eventKey: string, bookingRef: string): Promise<InventoryBookingDetail> {
+    return this.retrieveBooking(eventKey, bookingRef);
   }
 
   /** Hold inventory back from sale (house seats, holds for production). */
