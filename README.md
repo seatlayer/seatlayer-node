@@ -1,5 +1,10 @@
 # SeatLayer Node SDK
 
+[![CI](https://github.com/seatlayer/seatlayer-node/actions/workflows/ci.yml/badge.svg)](https://github.com/seatlayer/seatlayer-node/actions/workflows/ci.yml)
+[![npm](https://img.shields.io/npm/v/@seatlayer/server?label=%40seatlayer%2Fserver)](https://www.npmjs.com/package/@seatlayer/server)
+[![Node.js](https://img.shields.io/node/v/@seatlayer/server.svg)](https://www.npmjs.com/package/@seatlayer/server)
+[![License: MIT](https://img.shields.io/badge/license-MIT-111827.svg)](LICENSE)
+
 Official Node.js server SDK for the [SeatLayer](https://seatlayer.io) reserved-seating API.
 
 > **Server-side only.** This package authenticates with your secret key. Never bundle it into a
@@ -310,7 +315,7 @@ await seatlayer.request('POST', '/v1/events/ev_1/some-new-route', { body: { … 
 | `webhooks` | `list` `create` `update` `delete` `listDeliveries` |
 | `workspaces` | `list` `create` `retrieve` `update` |
 
-Full reference: [docs.seatlayer.io/server-api](https://docs.seatlayer.io/server-api/)
+Full reference: [SeatLayer server API events](https://docs.seatlayer.io/server-api/events/)
 
 ## Related resources
 
