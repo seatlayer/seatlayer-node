@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.2.0 — unreleased
+## 0.2.0 — 2026-08-12
 
 - Establish the Platform inventory boundary: booking, cancellation, reporting,
   and webhooks contain no SeatLayer-owned buyer, payment, commercial Order,
