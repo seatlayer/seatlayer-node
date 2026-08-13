@@ -1,5 +1,28 @@
 # Changelog
 
+## Unreleased
+
+- **Security/reliability:** Mutations now default to a single attempt. Automatic header-replay
+  retries are limited to chart create/copy, event create, and workspace create, preventing
+  transient failures from duplicating holds or best-available results and from issuing extra
+  show-once credentials.
+- **API contracts:** Booking and cancellation now require a non-empty `bookingRef`; chart copy
+  accepts the server's optional name, external-reference, and workspace overrides; webhook
+  management uses the runtime `subs`/`sub` envelopes; and chart/event metadata types match the
+  fields returned by the API. Existing calls now expose event-create metadata, hold inspection,
+  allocation scope, channel acknowledgements, timed blocks, nullable hold TTLs, typed availability,
+  and webhook-delivery pagination. Manage and Designer session responses match their runtime
+  envelopes; manage sessions include every supported capability while retaining the SDK's explicit
+  least-privilege requirement.
+- **Parity surface:** Added raw event poster upload/removal, booking-history list/detail, and the
+  channel report. Event detail/lifecycle/report/log, channel preview/archive, and hosted-link
+  rotation/revocation now expose their documented response types. Selected-label holds and
+  best-available holds return their distinct contracts, and box-office booking rejects a blank
+  `bookingRef` before network I/O.
+- **Error contract:** Typed API failures consistently expose status, stable code, the full decoded
+  body, and `X-Request-ID`; non-JSON failures fall back to the base API error, and unsafe mutations
+  remain single-attempt even when rate limited.
+
 ## 0.2.0 — 2026-08-12
 
 - Establish the Platform inventory boundary: booking, cancellation, reporting,
@@ -12,8 +35,7 @@
   for inventory Booking History, including immutable configured-value and
   lifecycle snapshots. Public-manifest operation-id aliases are also exported.
 - Add `channels` for channel CRUD, versioned allocations, access previews,
-  channel reporting, and buyer-access-session mint/list/revoke. Managed hosted
-  access-link fulfilment is intentionally not exposed by this Platform resource.
+  channel reporting, and buyer-access-session mint/list/revoke.
 - Use `bookedValue` and `includesBookedValue` as the canonical configured-price
   reporting fields. `bookedRevenue`, `revenue`, and `includesRevenue` remain
   deprecated response aliases for compatibility.
@@ -38,6 +60,5 @@ First release of the SeatLayer Node server SDK.
   (with `conflicts` and `isSoldOut`), `SeatLayerRateLimitError`, `SeatLayerValidationError`,
   `SeatLayerNotFoundError`, `SeatLayerConnectionError`.
 - `verifyWebhook` — raw-body HMAC-SHA256 verification with constant-time comparison.
-- `createManageSession` requires explicit `capabilities`; the API's default grants
-  `event:cancel`, which releases booked inventory.
+- `createManageSession` requires explicit `capabilities`.
 - Constructor rejects a `pk_` key by name rather than failing as a 401 later.

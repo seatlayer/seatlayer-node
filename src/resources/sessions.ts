@@ -18,10 +18,9 @@ export class Sessions {
   /**
    * Mint a manage-session token for the control room.
    *
-   * `capabilities` is required here even though the API defaults it. That
-   * default grants all four — including `event:cancel`, which releases booked
-   * inventory. Granting cancellation authority by forgetting an argument is
-   * not a default worth inheriting, so this SDK makes you say it.
+   * The raw API defaults an omitted list to view-only (`event:view`). This SDK
+   * still requires an explicit non-empty set so browser authority is visible at
+   * every call site; pass the smallest set the page needs.
    *
    * `allowedOrigin` must be an https origin; the token is bound to it.
    */
@@ -33,11 +32,11 @@ export class Sessions {
     capabilities: ManageCapability[];
     /** 300–14400. Defaults to 3600 server-side. */
     expiresInSeconds?: number;
+    workspaceId?: string;
   }): Promise<ManageSession> {
     if (!params.capabilities?.length) {
       throw new TypeError(
-        'capabilities is required: pass the smallest set the page needs, e.g. ["event:view"]. '
-        + 'Omitting it server-side grants event:cancel, which can release booked inventory.',
+        'capabilities is required and must contain a non-empty least-privilege set.',
       );
     }
     return this.#http.post(`/v1/events/${encodeURIComponent(eventKey)}/manage-sessions`, {
@@ -46,7 +45,7 @@ export class Sessions {
   }
 
   /** Revoke a manage token before it expires (staff logout, permission change). */
-  revokeManageSession(eventKey: string, sessionId: string): Promise<void> {
+  revokeManageSession(eventKey: string, sessionId: string): Promise<{ ok: true }> {
     return this.#http.delete(
       `/v1/events/${encodeURIComponent(eventKey)}/manage-sessions/${encodeURIComponent(sessionId)}`,
     );
@@ -61,13 +60,19 @@ export class Sessions {
     chartId: string;
     allowedOrigin: string;
     authority?: 'read-only' | 'edit' | 'publish';
+    canPublish?: boolean;
     mode?: 'normal' | 'safe';
+    safeModeOptions?: {
+      allowDeletingObjects?: boolean;
+      allowEditingAreaCapacity?: boolean;
+    };
+    features?: Record<string, unknown>;
     expiresInSeconds?: number;
-  }): Promise<DesignerSession> {
+  }): Promise<{ session: DesignerSession }> {
     return this.#http.post('/v1/designer/sessions', { body: params });
   }
 
-  revokeDesignerSession(sessionId: string): Promise<void> {
+  revokeDesignerSession(sessionId: string): Promise<{ ok: true }> {
     return this.#http.delete(`/v1/designer/sessions/${encodeURIComponent(sessionId)}`);
   }
 }

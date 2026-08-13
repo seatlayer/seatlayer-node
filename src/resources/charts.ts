@@ -16,6 +16,22 @@ export interface ChartPage {
   nextCursor?: string;
 }
 
+export interface CopyChartParams {
+  name?: string;
+  /** `null` explicitly clears the source chart's external reference. */
+  externalRef?: string | null;
+  workspaceId?: string;
+  /**
+   * Kept inline for compatibility with the original `copy(id, { idempotencyKey })`
+   * signature. New code may pass it in the third argument instead.
+   */
+  idempotencyKey?: string;
+}
+
+export interface CopyChartOptions {
+  idempotencyKey?: string;
+}
+
 /**
  * Charts are the seat-map definitions events are created from.
  *
@@ -71,7 +87,10 @@ export class Charts {
     externalRef?: string;
     workspaceId?: string;
   }, options: { idempotencyKey?: string } = {}): Promise<{ meta: ChartMeta }> {
-    return this.#http.post('/v1/charts', { body: params, idempotencyKey: options.idempotencyKey });
+    return this.#http.postWithHeaderReplay('/v1/charts', {
+      body: params,
+      idempotencyKey: options.idempotencyKey,
+    });
   }
 
   retrieve(chartId: string): Promise<Chart> {
@@ -97,14 +116,24 @@ export class Charts {
     return this.#http.put(`/v1/charts/${encodeURIComponent(chartId)}`, { body: params });
   }
 
-  delete(chartId: string): Promise<void> {
+  delete(chartId: string): Promise<{
+    ok: true;
+    cleanup: { referenceObjectsDeleted: number };
+  }> {
     return this.#http.delete(`/v1/charts/${encodeURIComponent(chartId)}`);
   }
 
   /** Copy a chart — the usual way to provision a venue from a template. */
-  copy(chartId: string, options: { idempotencyKey?: string } = {}): Promise<{ meta: ChartMeta }> {
-    return this.#http.post(`/v1/charts/${encodeURIComponent(chartId)}/duplicate`, {
-      idempotencyKey: options.idempotencyKey,
+  copy(
+    chartId: string,
+    params: CopyChartParams = {},
+    options: CopyChartOptions = {},
+  ): Promise<{ meta: ChartMeta }> {
+    const { idempotencyKey: inlineIdempotencyKey, ...overrides } = params;
+    const body = Object.keys(overrides).length ? overrides : undefined;
+    return this.#http.postWithHeaderReplay(`/v1/charts/${encodeURIComponent(chartId)}/duplicate`, {
+      body,
+      idempotencyKey: options.idempotencyKey ?? inlineIdempotencyKey,
     });
   }
 

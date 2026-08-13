@@ -2,34 +2,118 @@
 
 export type KeyMode = 'live' | 'test';
 
+export type ReadinessState = 'healthy' | 'degraded' | 'unavailable';
+
+export interface ReadinessReport {
+  state: ReadinessState;
+  version: string;
+  checkedAt: string;
+  dependencies: Array<{
+    name: string;
+    state: ReadinessState;
+    latencyMs: number;
+    reason?: string;
+  }>;
+}
+
 export interface ChartMeta {
   id: string;
   name: string;
   status: string;
-  workspaceId?: string;
-  externalRef?: string | null;
+  seats: number;
   updatedAt: number;
-  createdAt: number;
+  hasThumbnail: boolean;
+  issues?: number;
+  archivedAt: number | null;
+  externalRef?: string;
+  workspaceId: string;
+  publicationPolicy: 'legacy' | 'review-required';
+  sourceTemplate?: {
+    id: string;
+    version: number;
+    sha256: string | null;
+  };
   [key: string]: unknown;
 }
 
 export interface Chart {
   meta: ChartMeta;
   /** The chart document. Authored in the Designer; opaque to most backends. */
-  doc?: Record<string, unknown>;
+  doc: Record<string, unknown> | null;
+  /** Derived sellable capacity by category when a document exists. */
+  categorySeats?: Record<string, number>;
 }
 
 export interface EventMeta {
   key: string;
-  id: string;
   chartId: string;
-  name?: string;
-  slug?: string | null;
-  startsAt?: number | null;
-  venue?: string | null;
-  currency?: string | null;
-  externalRef?: string | null;
+  name: string;
+  status: string;
+  salesState: string;
+  salesRevision: number;
+  salesPauseReason: string | null;
+  seatTotal: number;
+  createdAt: number;
+  startsAt: number | null;
+  venue: string | null;
+  mode: KeyMode;
+  externalRef?: string;
+  workspaceId: string;
+  currency?: string;
+  inventoryModelVersion?: number;
+  paymentGateway?: unknown | null;
+  buyerCheckout?: unknown;
+  buyerCheckoutRevision?: number;
+  buyerSurface?: unknown;
+  buyerSurfaceRevision?: number;
+  description: string | null;
+  endsAt: number | null;
+  timezone: string | null;
+  locale: string | null;
+  posterPath: string | null;
   [key: string]: unknown;
+}
+
+export interface EventCounts {
+  free: number;
+  held: number;
+  booked: number;
+  blocked: number;
+}
+
+export type EventSectionState = 'open' | 'closed' | 'hidden';
+
+export interface EventSectionStates {
+  hidden: string[];
+  closed: string[];
+  states: Record<string, EventSectionState>;
+}
+
+export interface EventEnvelope {
+  meta: EventMeta;
+  sectionStates?: EventSectionStates;
+}
+
+export interface EventDetail {
+  meta: EventMeta & { sold: number };
+  counts: EventCounts;
+  /** `null` means the event is using the workspace default. */
+  holdTtlMs: number | null;
+  chartUpdate?: {
+    behind: boolean;
+    canAutoUpdate: boolean;
+  };
+}
+
+export interface SalesAliasResult {
+  status: string;
+  state: string;
+  revision: number;
+  changed: boolean;
+}
+
+export interface ArchiveEventResult {
+  status: 'archived';
 }
 
 /** A priced line item. `unitPrice` is in `currency`, not in minor units. */
@@ -42,38 +126,14 @@ export interface HoldLineItem {
   unitPrice: number;
   currency: string;
   quantity?: number;
+  bookingMode?: 'individual' | 'whole' | 'variable';
   capacity?: number;
-}
-
-/** Trusted allocation scope for a Platform inventory mutation. */
-export interface InventoryAccessScope {
-  /** Private channel allocations this server-side operation may use. */
-  channelIds?: string[];
-  /** Audited staff override. Prefer an explicit channel scope whenever possible. */
-  ignoreChannelRestrictions?: boolean;
-  /** Human-readable audit reason when using a trusted override. */
-  reason?: string;
-}
-
-export interface HoldSelection {
-  label: string;
-  tierId?: string | null;
-  quantity?: number;
-}
-
-export interface HoldParams extends InventoryAccessScope {
-  labels?: string[];
-  selections?: HoldSelection[];
-  /** Overrides the event's configured hold window, within server limits. */
-  ttlMs?: number;
-  replaceHoldId?: string;
-}
-
-export interface HoldBestAvailableParams extends InventoryAccessScope {
-  qty: number;
-  categoryKey?: string;
-  zoneId?: string;
-  ttlMs?: number;
+  minOccupancy?: number;
+  maxOccupancy?: number;
+  /** Private allocation this item came from; `null` means Public sale. */
+  channelId?: string | null;
+  accessSource?: AccessSource;
+  releaseId?: string | null;
 }
 
 export interface HoldResult {
@@ -83,60 +143,98 @@ export interface HoldResult {
   expiresAt: number;
   items: HoldLineItem[];
   labels?: string[];
-  zoneId?: string;
 }
 
-export interface RetrieveHoldResult {
-  items: HoldLineItem[];
+export interface ExtendHoldResult {
+  ok: true;
+  holdId: string;
   expiresAt: number;
-  currency: string;
+  /** Number of successful extensions used by this hold. */
+  extends: number;
 }
 
-export type BookParams = InventoryAccessScope & {
-  /** Caller-owned stable reference used to reconcile this inventory booking. */
+export type AccessSource =
+  | 'public'
+  | 'promoter'
+  | 'partner'
+  | 'hosted_link'
+  | 'staff_override';
+
+/** Authoritative server-side view of a hold. No bearer token is returned. */
+export interface HoldInspection {
+  holdId: string;
+  status: 'active' | 'booked' | 'released' | 'expired';
+  expiresAt: number;
+  bookingRef: string | null;
+  eventKey: string | null;
+  mode: KeyMode;
+  externalRef: string | null;
+  workspaceId: string | null;
+  items: HoldLineItem[];
+  accessSessionId?: string | null;
+  accessSource?: AccessSource;
+  buyerRef?: string | null;
+  partnerRef?: string | null;
+}
+
+/** Optional private-allocation authority for trusted server inventory calls. */
+export interface TrustedInventoryAccess {
+  channelIds?: string[];
+  /** Explicit audited bypass across every channel allocation. */
+  ignoreChannelRestrictions?: boolean;
+  reason?: string;
+}
+
+/** @deprecated Use `TrustedInventoryAccess`. */
+export interface InventoryAccessScope extends TrustedInventoryAccess {}
+
+export interface HoldSelection {
+  label: string;
+  tierId?: string | null;
+  quantity?: number;
+}
+
+export interface HoldParams extends TrustedInventoryAccess {
+  labels?: string[];
+  selections?: HoldSelection[];
+  ttlMs?: number;
+  replaceHoldId?: string;
+}
+
+export interface HoldBestAvailableParams extends TrustedInventoryAccess {
+  qty: number;
+  categoryKey?: string;
+  zoneId?: string;
+  ttlMs?: number;
+}
+
+/** @deprecated Use `HoldInspection`. */
+export type RetrieveHoldResult = HoldInspection;
+
+export type BookParams = TrustedInventoryAccess & {
   bookingRef: string;
 } & (
   | { holdId: string; labels?: string[] }
   | { labels: string[]; holdId?: never }
 );
 
-export interface BookResult {
-  ok: true;
-  /** Newly booked labels. Empty on an idempotent replay. */
-  booked: string[];
-  /** The normalized caller-owned reference supplied to the operation. */
-  bookingRef: string;
-}
-
-export interface BookBestAvailableParams extends InventoryAccessScope {
+export interface BookBestAvailableParams extends TrustedInventoryAccess {
   qty: number;
   bookingRef: string;
   categoryKey?: string;
   zoneId?: string;
 }
 
-export interface BookBestAvailableResult {
-  ok: true;
-  labels: string[];
-  items: HoldLineItem[];
-  bookingRef: string;
-  zoneId?: string;
-}
-
 export interface UnbookParams {
   labels: string[];
-  /** Must match the stable reference that booked these labels. */
   bookingRef: string;
 }
 
-export interface UnbookResult {
-  ok: true;
-  unbooked: string[];
-  /** The normalized caller-owned reference supplied to the operation. */
-  bookingRef: string;
-}
+export type AvailabilityRule =
+  | { mode: 'hidden' | 'closed'; labels?: string[] }
+  | { mode: 'timed'; revealAt: number; labels?: string[] }
+  | { mode: 'threshold'; thresholdPct: number; labels?: string[] };
 
-/** Platform/SDK inventory history. This is not a commercial order. */
 export type InventoryBookingState = 'booked' | 'partially_cancelled' | 'cancelled';
 
 export interface InventoryBookingObject {
@@ -151,7 +249,6 @@ export interface InventoryBookingObject {
   releaseId: string | null;
   bookingMode: 'individual' | 'whole' | 'variable';
   quantity: number;
-  /** Event-configured price snapshot; not evidence of money collected. */
   unitPrice: number;
   configuredValue: number;
   currency: string;
@@ -161,11 +258,12 @@ export interface InventoryBookingObject {
   state: 'booked' | 'cancelled';
   bookedAt: number;
   cancelledAt: number | null;
+  [key: string]: unknown;
 }
 
-export interface InventoryBooking {
+export interface InventoryBookingRecord {
   eventKey: string;
-  eventMode: 'live' | 'test';
+  eventMode: KeyMode;
   bookingRef: string;
   state: InventoryBookingState;
   bookedAt: number;
@@ -182,6 +280,25 @@ export interface InventoryBooking {
   configuredValue: number;
   activeConfiguredValue: number;
   currency: string | null;
+  [key: string]: unknown;
+}
+
+/** @deprecated Use `InventoryBookingRecord`. */
+export type InventoryBooking = InventoryBookingRecord;
+
+export interface InventoryBookingActivity {
+  id: number;
+  action: 'book' | 'replay' | 'partial_cancel' | 'cancel' | 'reconcile';
+  at: number;
+  labels: string[];
+  actor: string | null;
+  source: string;
+  [key: string]: unknown;
+}
+
+export interface InventoryBookingPage {
+  bookings: InventoryBookingRecord[];
+  nextCursor: string | null;
 }
 
 export interface InventoryBookingsQuery {
@@ -191,81 +308,130 @@ export interface InventoryBookingsQuery {
   limit?: number;
 }
 
-export interface InventoryBookingsPage {
-  bookings: InventoryBooking[];
-  nextCursor: string | null;
-}
-
-export interface InventoryBookingActivity {
-  id: number;
-  action: 'book' | 'replay' | 'partial_cancel' | 'cancel' | 'reconcile';
-  at: number;
-  labels: string[];
-  actor: string | null;
-  source: string;
-}
+/** @deprecated Use `InventoryBookingPage`. */
+export type InventoryBookingsPage = InventoryBookingPage;
 
 export interface InventoryBookingDetail {
-  booking: InventoryBooking;
+  booking: InventoryBookingRecord;
   activity: InventoryBookingActivity[];
   activityTruncated: boolean;
 }
 
-export interface ReportByStatus {
+export interface ReportStatusCounts {
   free: number;
   held: number;
   booked: number;
   not_for_sale: number;
 }
 
-export interface ReportCategoryRow extends ReportByStatus {
+export interface EventReportCategory extends ReportStatusCounts {
   category: string;
   total: number;
-  /** Configured-price snapshot for booked inventory; not payment revenue. */
   bookedValue: number;
-  /** @deprecated Use `bookedValue`. */
   bookedRevenue: number;
 }
 
-export interface ReportSectionRow extends ReportByStatus {
+export interface EventReportSection extends ReportStatusCounts {
   sectionId: string;
   sectionLabel: string;
   zoneId: string | null;
   total: number;
   bookedValue: number;
-  /** @deprecated Use `bookedValue`. */
   bookedRevenue: number;
 }
 
-export interface ReportAccessibilityRow extends ReportByStatus {
-  type: string;
+export interface EventReportAccessibility extends ReportStatusCounts {
+  type:
+    | 'wheelchair'
+    | 'companion'
+    | 'semi-ambulatory'
+    | 'hearing'
+    | 'cart'
+    | 'sign-language'
+    | 'plus-size'
+    | 'lift-armrest';
   label: string;
   total: number;
 }
 
-export interface ReportWheelchairProvisionRow extends ReportByStatus {
+export interface EventReportWheelchairProvision extends ReportStatusCounts {
   type: 'seat-present' | 'no-seat';
   label: string;
   total: number;
 }
 
+export interface EventReport {
+  byStatus: ReportStatusCounts;
+  byCategory: EventReportCategory[];
+  bySection: EventReportSection[];
+  byAccessibility: EventReportAccessibility[];
+  byWheelchairProvision: EventReportWheelchairProvision[];
+  [key: string]: unknown;
+}
+
+export interface EventReportEnvelope {
+  report: EventReport;
+  event: EventMeta;
+  categories: Array<{ key: string; label: string; color: string; price: number }>;
+}
+
+/** Compatibility names retained from 0.2.0. */
+export interface ReportByStatus extends ReportStatusCounts {}
+export interface ReportCategoryRow extends EventReportCategory {}
+export interface ReportSectionRow extends EventReportSection {}
+export interface ReportAccessibilityRow extends EventReportAccessibility {}
+export interface ReportWheelchairProvisionRow extends EventReportWheelchairProvision {}
 export interface ReportCategoryMeta {
   key: string;
   label: string;
   color: string;
   price: number;
 }
+export interface EventReportResult extends EventReportEnvelope {}
 
-export interface EventReportResult {
-  report: {
-    byStatus: ReportByStatus;
-    byCategory: ReportCategoryRow[];
-    bySection: ReportSectionRow[];
-    byAccessibility: ReportAccessibilityRow[];
-    byWheelchairProvision: ReportWheelchairProvisionRow[];
-  };
-  event: EventMeta;
-  categories: ReportCategoryMeta[];
+export interface EventLogEntry {
+  id: number;
+  at: number;
+  action: string;
+  labels: string[];
+  ref: string | null;
+  [key: string]: unknown;
+}
+
+export interface EventLogPage {
+  entries: EventLogEntry[];
+  nextBefore: number | null;
+}
+
+export interface BookResult {
+  ok: true;
+  booked: string[];
+  /** Normalized caller-owned reference echoed by the SDK. */
+  bookingRef: string;
+}
+
+export interface BestAvailableHoldResult extends HoldResult {
+  labels: string[];
+  zoneId?: string;
+}
+
+export interface BestAvailableBookResult {
+  ok: true;
+  labels: string[];
+  items: HoldLineItem[];
+  bookingRef: string;
+  zoneId?: string;
+}
+
+/** @deprecated Use `BestAvailableBookResult`. */
+export type BookBestAvailableResult = BestAvailableBookResult;
+
+export interface UnbookResult {
+  ok: true;
+  unbooked: string[];
+  conflicts: unknown[];
+  /** Normalized caller-owned reference echoed by the SDK. */
+  bookingRef: string;
 }
 
 export interface Workspace {
@@ -276,38 +442,94 @@ export interface Workspace {
   externalRef?: string | null;
 }
 
+export type WebhookEventName =
+  | 'seat.booked'
+  | 'seat.released'
+  | 'seat.blocked'
+  | 'hold.expired'
+  | 'hold.created'
+  | 'hold.extended'
+  | 'event.created'
+  | 'event.soldout';
+
 export interface Webhook {
   id: string;
   url: string;
-  events: string[];
-  status?: string;
+  events: WebhookEventName[];
+  disabled: boolean;
+  lastStatus: string | null;
+  lastAt: number | null;
+  createdAt: number;
+  mode: KeyMode | null;
+  environment: string | null;
+  /** Successful delivery percentage over the trailing seven days. */
+  uptime7d: number | null;
   [key: string]: unknown;
+}
+
+export interface WebhookDelivery {
+  id: string;
+  at: number;
+  event: WebhookEventName;
+  ref: string | null;
+  /** Receiver HTTP status; zero represents a transport failure. */
+  status: number;
+  attempt: number;
+  maxAttempts: number;
+  willRetry: boolean;
+  occurrenceId: string | null;
+  payload: string | null;
+  responseBody: string | null;
+  errorMessage: string | null;
 }
 
 /**
  * What a manage-session token is allowed to do in the browser.
  *
- * `event:cancel` releases booked inventory. It is separated from `event:block`
- * deliberately: an operational view that only holds inventory back should not
- * also be able to cancel a caller-owned booking reference.
+ * `event:cancel` un-books paid inventory. It is separated from `event:block`
+ * deliberately — a box-office view that only needs to hold seats back should
+ * never be able to cancel a sale.
  */
 export type ManageCapability =
   | 'event:view'
   | 'event:block'
   | 'event:cancel'
   | 'event:reports'
+  | 'event:orders:read'
+  | 'event:refund'
+  | 'event:tickets:send'
+  | 'event:door:view'
+  | 'event:door:checkin'
+  | 'event:boxoffice'
   | 'event:channels:view'
   | 'event:channels:manage';
 
 export interface ManageSession {
+  id: string;
   token: string;
   expiresAt: number;
+  eventKey: string;
+  allowedOrigin: string;
   capabilities: ManageCapability[];
   [key: string]: unknown;
 }
 
 export interface DesignerSession {
+  id: string;
   token: string;
+  workspaceId: string;
+  chartId: string;
+  allowedOrigin: string;
+  authority: 'read-only' | 'edit' | 'publish';
+  canEdit: boolean;
+  canPublish: boolean;
+  mode: 'normal' | 'safe';
+  safeModeOptions: {
+    allowDeletingObjects: boolean;
+    allowEditingAreaCapacity: boolean;
+  };
+  featurePolicy: Record<string, unknown>;
   expiresAt: number;
+  designerUrl: string;
   [key: string]: unknown;
 }

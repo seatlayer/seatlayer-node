@@ -12,6 +12,7 @@ import { Inventory } from './resources/inventory.js';
 import { Sessions } from './resources/sessions.js';
 import { Webhooks } from './resources/webhooks.js';
 import { Workspaces } from './resources/workspaces.js';
+import type { ReadinessReport } from './types.js';
 
 export class SeatLayer {
   readonly charts: Charts;
@@ -42,13 +43,14 @@ export class SeatLayer {
   }
 
   /** Dependency-aware readiness probe. Unauthenticated upstream. */
-  ready(): Promise<{ ok: boolean; [key: string]: unknown }> {
+  ready(): Promise<ReadinessReport> {
     return this.#http.get('/health/ready');
   }
 
   /**
-   * Escape hatch for surface this SDK does not wrap yet. Carries the same auth,
-   * retry, idempotency and error mapping as everything else.
+   * Escape hatch for surface this SDK does not wrap yet. Reads retain transient
+   * retries; raw mutations are deliberately single-attempt because the SDK
+   * cannot prove that an unknown operation supports exact replay.
    */
   request<T>(method: string, path: string, options?: Parameters<HttpClient['request']>[2]): Promise<T> {
     return this.#http.request<T>(method, path, options);
@@ -68,22 +70,39 @@ export {
 } from './errors.js';
 export type { ClientOptions, RequestOptions } from './http.js';
 export type {
-  AccessSource,
+  AccessLink,
+  AccessLinkReveal,
+  AccessLinkRevokeResult,
   BuyerAccessSession,
   BuyerAccessSessionRecord,
   Channel,
   ChannelAccess,
+  ChannelAccessPreview,
   ChannelAccessIntent,
+  ChannelAssignmentBuckets,
   ChannelAssignmentResult,
+  ChannelArchiveResult,
+  ChannelAttribution,
   ChannelCounts,
   ChannelListResult,
+  ChannelPreviewAudience,
   ChannelReport,
+  ChannelReportEnvelope,
   ChannelReportResult,
+  ChannelReportRow,
   ChannelState,
   ChannelWithCounts,
   CreateBuyerAccessSessionParams,
+  PublicSaleChannel,
 } from './resources/channels.js';
 export { PUBLIC_CHANNEL_ID } from './resources/channels.js';
+export type {
+  EventChartUpdateResult,
+  EventListOptions,
+  EventPage,
+  EventUpdateParams,
+  PosterImage,
+} from './resources/events.js';
 export type * from './types.js';
 
 export default SeatLayer;

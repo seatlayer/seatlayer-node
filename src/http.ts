@@ -27,10 +27,15 @@ export interface ClientOptions {
 
 export interface RequestOptions {
   query?: Record<string, string | number | boolean | undefined>;
+  /** JSON request body. Mutually exclusive with `rawBody`. */
   body?: unknown;
+  /** Raw request body for binary endpoints such as event posters. */
+  rawBody?: NonNullable<RequestInit['body']>;
+  /** Content type for `rawBody`. Defaults to application/octet-stream. */
+  contentType?: string;
   /**
-   * Explicit Idempotency-Key. Omit and mutating requests get a generated one —
-   * see `shouldSendIdempotencyKey`.
+   * Explicit Idempotency-Key. This never makes an otherwise unsupported
+   * mutation retryable; only typed header-replay operations retry mutations.
    */
   idempotencyKey?: string;
   signal?: AbortSignal;
@@ -49,16 +54,6 @@ export function assertValidIdempotencyKey(key: string): void {
       `Invalid Idempotency-Key ${JSON.stringify(key)}: allowed characters are A-Z a-z 0-9 . _ : - and the length must be 1-128.`,
     );
   }
-}
-
-/**
- * Every mutating request carries one. A retried POST that creates a second hold
- * is worse than a failed POST, and the caller cannot tell the difference from
- * the outside — so the SDK, which knows it retried, is the right place to
- * guarantee it. GET is naturally idempotent and needs no key.
- */
-export function shouldSendIdempotencyKey(method: string): boolean {
-  return method !== 'GET' && method !== 'HEAD';
 }
 
 /**
@@ -135,6 +130,24 @@ export class HttpClient {
   }
 
   async request<T>(method: string, path: string, options: RequestOptions = {}): Promise<T> {
+    return this.#request<T>(method, path, options, false);
+  }
+
+  /** Internal typed-operation path for mutations backed by exact HTTP replay. */
+  postWithHeaderReplay<T>(path: string, options: RequestOptions = {}): Promise<T> {
+    return this.#request<T>('POST', path, options, true);
+  }
+
+  async #request<T>(
+    method: string,
+    path: string,
+    options: RequestOptions,
+    headerReplay: boolean,
+  ): Promise<T> {
+    method = method.toUpperCase();
+    if (options.body !== undefined && options.rawBody !== undefined) {
+      throw new TypeError('RequestOptions body and rawBody are mutually exclusive.');
+    }
     const url = new URL(this.baseUrl + path);
     for (const [key, value] of Object.entries(options.query ?? {})) {
       if (value !== undefined) url.searchParams.set(key, String(value));
@@ -146,17 +159,23 @@ export class HttpClient {
       'User-Agent': '@seatlayer/server',
     };
     if (options.body !== undefined) headers['Content-Type'] = 'application/json';
+    if (options.rawBody !== undefined) {
+      headers['Content-Type'] = options.contentType ?? 'application/octet-stream';
+    }
 
-    if (shouldSendIdempotencyKey(method)) {
+    const isRead = method === 'GET' || method === 'HEAD';
+    if (headerReplay || (!isRead && options.idempotencyKey !== undefined)) {
       const key = options.idempotencyKey ?? crypto.randomUUID();
       assertValidIdempotencyKey(key);
-      // Deliberately stable across retries of the same logical call: that is
-      // the entire point — the server collapses the duplicates.
+      // Generated once before the loop, so every safe retry reuses one key.
       headers['Idempotency-Key'] = key;
     }
 
+    // Reads are safe by HTTP semantics. Mutations are single-attempt unless a
+    // typed resource opted into the server's exact header-replay contract.
+    const totalAttempts = isRead || headerReplay ? this.#maxRetries : 1;
     let lastError: unknown;
-    for (let attempt = 0; attempt < this.#maxRetries; attempt++) {
+    for (let attempt = 0; attempt < totalAttempts; attempt++) {
       const timeout = AbortSignal.timeout(this.#timeoutMs);
       const signal = options.signal
         ? AbortSignal.any([options.signal, timeout])
@@ -168,7 +187,11 @@ export class HttpClient {
           method,
           headers,
           signal,
-          ...(options.body !== undefined ? { body: JSON.stringify(options.body) } : {}),
+          ...(options.body !== undefined
+            ? { body: JSON.stringify(options.body) }
+            : options.rawBody !== undefined
+              ? { body: options.rawBody }
+              : {}),
         });
       } catch (cause) {
         // A caller-initiated abort is a decision, not a failure to retry.
@@ -177,7 +200,7 @@ export class HttpClient {
           `Request to ${method} ${path} failed: ${(cause as Error)?.message ?? 'unknown error'}`,
           cause,
         );
-        if (attempt < this.#maxRetries - 1) {
+        if (attempt < totalAttempts - 1) {
           await sleep(backoffMs(attempt, null));
           continue;
         }
@@ -195,7 +218,7 @@ export class HttpClient {
       const body = (await response.json().catch(() => ({}))) as ApiErrorBody;
       const retryAfter = parseRetryAfter(response, body);
 
-      if (isRetryableStatus(response.status) && attempt < this.#maxRetries - 1) {
+      if (isRetryableStatus(response.status) && attempt < totalAttempts - 1) {
         await sleep(backoffMs(attempt, response.status === 429 ? retryAfter : null));
         continue;
       }

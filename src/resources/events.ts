@@ -1,5 +1,16 @@
 import type { HttpClient } from '../http.js';
-import type { EventMeta, EventReportResult } from '../types.js';
+import type {
+  ArchiveEventResult,
+  EventCounts,
+  EventDetail,
+  EventEnvelope,
+  EventLogPage,
+  EventMeta,
+  EventReportEnvelope,
+  EventSectionState,
+  KeyMode,
+  SalesAliasResult,
+} from '../types.js';
 
 export interface EventListOptions {
   workspaceId?: string;
@@ -12,10 +23,37 @@ export interface EventListOptions {
 }
 
 export interface EventPage {
-  events: EventMeta[];
+  events: Array<EventMeta & { sold: number; counts?: EventCounts }>;
   /** Absent once the list is exhausted. */
   nextCursor?: string;
 }
+
+export interface EventChartUpdateResult {
+  ok: boolean;
+  updated: boolean;
+  meta: EventMeta;
+}
+
+interface EventUpdateFields {
+  name: string;
+  startsAt: number | null;
+  venue: string | null;
+  externalRef: string | null;
+  currency: string | null;
+  description: string | null;
+  endsAt: number | null;
+  timezone: string | null;
+  locale: string | null;
+  sectionStates: Record<string, EventSectionState>;
+}
+
+/** Event updates must contain at least one supported field. */
+export type EventUpdateParams = {
+  [K in keyof EventUpdateFields]: Pick<EventUpdateFields, K> & Partial<Omit<EventUpdateFields, K>>;
+}[keyof EventUpdateFields];
+
+/** Raw image input accepted by fetch; Node Buffers satisfy ArrayBufferView. */
+export type PosterImage = Blob | ArrayBuffer | ArrayBufferView;
 
 export class Events {
   #http: HttpClient;
@@ -64,61 +102,91 @@ export class Events {
     chartId: string;
     name?: string;
     slug?: string;
-    startsAt?: number;
-    venue?: string;
-    externalRef?: string;
+    startsAt?: number | null;
+    venue?: string | null;
+    externalRef?: string | null;
     /** Three-letter override. Defaults to the organisation currency. */
-    currency?: string;
-  }, options: { idempotencyKey?: string } = {}): Promise<{ meta: EventMeta }> {
-    return this.#http.post('/v1/events', { body: params, idempotencyKey: options.idempotencyKey });
+    currency?: string | null;
+    description?: string | null;
+    endsAt?: number | null;
+    /** IANA time-zone name used to render local event times. */
+    timezone?: string | null;
+    /** Event-specific BCP-47 language tag. */
+    locale?: string | null;
+    /** A poster previously staged through the API. */
+    posterAssetId?: string | null;
+    /** A secret-key client is always pinned to its own mode. */
+    mode?: KeyMode;
+  }, options: { idempotencyKey?: string } = {}): Promise<EventEnvelope> {
+    return this.#http.postWithHeaderReplay('/v1/events', {
+      body: params,
+      idempotencyKey: options.idempotencyKey,
+    });
   }
 
-  retrieve(eventKey: string): Promise<{ meta: EventMeta; counts?: Record<string, number> }> {
+  retrieve(eventKey: string): Promise<EventDetail> {
     return this.#http.get(`/v1/events/${encodeURIComponent(eventKey)}`);
   }
 
-  update(eventKey: string, params: Record<string, unknown>): Promise<{ meta: EventMeta }> {
+  update(eventKey: string, params: EventUpdateParams): Promise<EventEnvelope> {
     return this.#http.patch(`/v1/events/${encodeURIComponent(eventKey)}`, { body: params });
   }
 
-  delete(eventKey: string): Promise<void> {
+  delete(eventKey: string): Promise<{ ok: true }> {
     return this.#http.delete(`/v1/events/${encodeURIComponent(eventKey)}`);
   }
 
+  /** Upload raw PNG, JPEG, or WebP bytes. The API validates magic bytes. */
+  updatePoster(eventKey: string, image: PosterImage): Promise<EventEnvelope> {
+    return this.#http.put(`/v1/events/${encodeURIComponent(eventKey)}/poster`, {
+      rawBody: image as NonNullable<RequestInit['body']>,
+    });
+  }
+
+  deletePoster(eventKey: string): Promise<EventEnvelope> {
+    return this.#http.delete(`/v1/events/${encodeURIComponent(eventKey)}/poster`);
+  }
+
   /** Move a live event onto the latest published version of its chart. */
-  updateChart(eventKey: string): Promise<unknown> {
-    return this.#http.post(`/v1/events/${encodeURIComponent(eventKey)}/update-chart`);
+  updateChart(eventKey: string, params: {
+    acknowledgeDroppedAssignments?: boolean;
+    reason?: string;
+  } = {}): Promise<EventChartUpdateResult> {
+    return this.#http.post(`/v1/events/${encodeURIComponent(eventKey)}/update-chart`, { body: params });
   }
 
   /** Stop buyer sales. Existing holds keep their TTL. */
-  close(eventKey: string): Promise<unknown> {
+  close(eventKey: string): Promise<SalesAliasResult> {
     return this.#http.post(`/v1/events/${encodeURIComponent(eventKey)}/close`);
   }
 
-  reopen(eventKey: string): Promise<unknown> {
+  reopen(eventKey: string): Promise<SalesAliasResult> {
     return this.#http.post(`/v1/events/${encodeURIComponent(eventKey)}/reopen`);
   }
 
-  archive(eventKey: string): Promise<unknown> {
+  archive(eventKey: string): Promise<ArchiveEventResult> {
     return this.#http.post(`/v1/events/${encodeURIComponent(eventKey)}/archive`);
   }
 
   /** Read the checkout window (ms) buyers get for this event. */
-  retrieveHoldTtl(eventKey: string): Promise<{ holdTtlMs: number }> {
+  retrieveHoldTtl(eventKey: string): Promise<{ holdTtlMs: number | null }> {
     return this.#http.get(`/v1/events/${encodeURIComponent(eventKey)}/hold-ttl`);
   }
 
-  updateHoldTtl(eventKey: string, holdTtlMs: number): Promise<unknown> {
+  updateHoldTtl(eventKey: string, holdTtlMs: number | null): Promise<{
+    ok: true;
+    holdTtlMs: number | null;
+  }> {
     return this.#http.post(`/v1/events/${encodeURIComponent(eventKey)}/hold-ttl`, {
       body: { holdTtlMs },
     });
   }
 
-  retrieveReport(eventKey: string): Promise<EventReportResult> {
+  retrieveReport(eventKey: string): Promise<EventReportEnvelope> {
     return this.#http.get(`/v1/events/${encodeURIComponent(eventKey)}/report`);
   }
 
-  retrieveLog(eventKey: string): Promise<unknown> {
-    return this.#http.get(`/v1/events/${encodeURIComponent(eventKey)}/log`);
+  retrieveLog(eventKey: string, options: { limit?: number; before?: number } = {}): Promise<EventLogPage> {
+    return this.#http.get(`/v1/events/${encodeURIComponent(eventKey)}/log`, { query: options });
   }
 }

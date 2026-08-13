@@ -43,9 +43,9 @@ const { meta: event } = await seatlayer.events.create({
   startsAt: Date.parse('2026-09-12T19:30:00Z'),
 });
 
-// 3. Reserve four seats for an order in your own commerce system.
+// 3. Sell four seats over the phone.
 const held = await seatlayer.inventory.holdBestAvailable(event.key, { qty: 4 });
-// … your system takes payment against held.items' authoritative configured prices …
+// … take payment against held.items, which carry authoritative prices …
 await seatlayer.inventory.book(event.key, { holdId: held.holdId, bookingRef: 'order-8842' });
 ```
 
@@ -62,19 +62,20 @@ if (process.env.NODE_ENV === 'production' && seatlayer.mode !== 'live') {
 }
 ```
 
-## The two inventory-confirmation flows
+## The two selling flows
 
 **Buyer picks seats in the browser.** Your frontend holds them; your backend confirms the price and
 books. Never price from what the browser sent you — `retrieveHold` is the authoritative answer.
 
 ```ts
 const hold = await seatlayer.inventory.retrieveHold(eventKey, holdId);
-const total = hold.items.reduce((sum, item) => sum + item.unitPrice, 0);
-// … charge `total` in hold.currency …
+const total = hold.items.reduce((sum, item) => sum + item.unitPrice * (item.quantity ?? 1), 0);
+const currency = hold.items[0]?.currency;
+// … charge `total` in `currency` …
 await seatlayer.inventory.book(eventKey, { holdId, bookingRef: charge.id });
 ```
 
-**Your backend picks the seats.** Marketplace orders, phone orders, or comps. No browser involved.
+**Your backend picks the seats.** Phone orders, box office, comps. No browser involved.
 
 ```ts
 // Payment already taken — book outright, so nothing is stranded if a second call fails.
@@ -137,10 +138,10 @@ const access = await seatlayer.channels.createBuyerAccessSession(eventKey, {
 // Return only access.token + access.expiresAt to the browser. Never the secret key.
 ```
 
-Channel reports use `bookedValue` and `includesBookedValue` for configured-price snapshots. The
-older `revenue` and `includesRevenue` response fields remain deprecated aliases for one
-compatibility window. Managed SeatLayer hosted-link fulfilment is intentionally outside this
-Platform SDK resource.
+For a managed invitation URL, use `createAccessLink`, persist the show-once URL immediately, and
+use `rotateAccessLink` or `revokeAccessLink` if it is misplaced. Channel reports use `bookedValue`
+and `includesBookedValue` for configured-price snapshots; `revenue` and `includesRevenue` remain
+deprecated response aliases for compatibility.
 
 ## Listing and pagination
 
@@ -195,15 +196,16 @@ const session = await seatlayer.sessions.createManageSession(eventKey, {
 });
 ```
 
-`capabilities` is **required** by this SDK even though the API defaults it. That default grants all
-four original inventory capabilities including `event:cancel`, which releases booked inventory —
-not something that should arrive by forgetting an argument. Grant the smallest set the page needs.
+The raw API safely defaults an omitted list to view-only (`event:view`). The SDK deliberately
+requires an explicit non-empty `capabilities` list so the browser authority is visible during code
+review. Grant only what the page needs across viewing, blocking, cancellation, reports, channels,
+orders, refunds, fulfilment, door, and box-office work.
 
 The same pattern embeds the Designer in your own UI:
 
 ```ts
 const { meta: chart } = await seatlayer.charts.create({ name: 'Riverside Theatre' });
-const designer = await seatlayer.sessions.createDesignerSession({
+const { session: designer } = await seatlayer.sessions.createDesignerSession({
   workspaceId,
   chartId: chart.id,
   allowedOrigin: 'https://app.yourplatform.com',
@@ -272,32 +274,28 @@ requests.
 
 ## Reliability
 
-**Retries.** 429, 408 and 5xx are retried with exponential backoff and full jitter; `Retry-After`
-wins when the server sends it. 4xx responses are never retried — they will not start succeeding.
+**Retries and idempotency.** Reads retry 408, 429 and 5xx responses with backoff. Only chart create,
+chart copy, event create and workspace create opt into mutation retries: the SDK generates one
+`Idempotency-Key` and reuses it for every attempt. All other mutations are single-attempt, even if
+you supply a key.
 
-**Idempotency.** Every mutating request carries an `Idempotency-Key`, generated if you do not supply
-one, and **reused across retries** so a retried booking cannot become two bookings. Pass your own
-order id when you want end-to-end deduplication:
-
-```ts
-await seatlayer.inventory.book(
-  eventKey,
-  { holdId, bookingRef: orderId },
-  { idempotencyKey: `order-${orderId}` },
-);
-```
+**Booking safety.** Direct and box-office bookings have the server's exact-selection plus
+`bookingRef` safeguard, but the SDK still sends them once. Holds, best-available operations,
+show-once secret creation and raw mutations are also single-attempt; reconcile an unknown outcome
+before trying again.
 
 ```ts
 new SeatLayer({
   secretKey: process.env.SEATLAYER_SECRET_KEY!,
-  maxRetries: 3,      // total attempts
+  maxRetries: 3,      // attempts for reads and the four replay-safe creates
   timeoutMs: 30_000,  // per attempt
 });
 ```
 
 ## Escape hatch
 
-For surface this SDK does not wrap yet — same auth, retries, idempotency and error mapping:
+For surface this SDK does not wrap yet. Raw reads retain retries; raw mutations are single-attempt
+because the SDK cannot prove that an unknown operation supports exact replay:
 
 ```ts
 await seatlayer.request('POST', '/v1/events/ev_1/some-new-route', { body: { … } });
@@ -308,14 +306,14 @@ await seatlayer.request('POST', '/v1/events/ev_1/some-new-route', { body: { … 
 | Resource | Methods |
 | --- | --- |
 | `charts` | `list` `listAll` `create` `retrieve` `update` `delete` `copy` `archive` `unarchive` `publish` |
-| `events` | `list` `listAll` `create` `retrieve` `update` `delete` `updateChart` `close` `reopen` `archive` `retrieveHoldTtl` `updateHoldTtl` `retrieveReport` `retrieveLog` |
-| `inventory` | `hold` `holdBestAvailable` `bookBestAvailable` `extendHold` `retrieveHold` `release` `book` `unbook` `listBookings` `retrieveBooking` `block` `unblock` `unblockAll` `retrieveAvailability` `updateAvailability` |
-| `channels` | `listChannels` `createChannel` `updateChannel` `updateChannelAssignments` `listChannelAllocation` `retrieveChannelAccessPreview` `retrieveChannelReport` `pauseChannel` `unpauseChannel` `archiveChannel` `createBuyerAccessSession` `listBuyerAccessSessions` `revokeBuyerAccessSession` |
+| `events` | `list` `listAll` `create` `retrieve` `update` `delete` `updatePoster` `deletePoster` `updateChart` `close` `reopen` `archive` `retrieveHoldTtl` `updateHoldTtl` `retrieveReport` `retrieveLog` |
+| `inventory` | `hold` `holdBestAvailable` `bookBestAvailable` `extendHold` `retrieveHold` `release` `book` `boxOfficeBook` `unbook` `block` `unblock` `unblockAll` `retrieveAvailability` `updateAvailability` `listBookings` `retrieveBooking` `listInventoryBookings` `retrieveInventoryBooking` |
+| `channels` | `listChannels` `createChannel` `updateChannel` `updateChannelAssignments` `listChannelAllocation` `retrieveChannelAccessPreview` `pauseChannel` `unpauseChannel` `archiveChannel` `retrieveChannelReport` `createBuyerAccessSession` `listBuyerAccessSessions` `revokeBuyerAccessSession` `createAccessLink` `listAccessLinks` `rotateAccessLink` `revokeAccessLink` |
 | `sessions` | `createManageSession` `revokeManageSession` `createDesignerSession` `revokeDesignerSession` |
 | `webhooks` | `list` `create` `update` `delete` `listDeliveries` |
 | `workspaces` | `list` `create` `retrieve` `update` |
 
-Full reference: [SeatLayer server API events](https://docs.seatlayer.io/server-api/events/)
+Full reference: [docs.seatlayer.io/server-api](https://docs.seatlayer.io/server-api/)
 
 ## Related resources
 

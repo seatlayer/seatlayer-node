@@ -17,7 +17,10 @@ export class Workspaces {
   }
 
   create(params: { name: string; externalRef?: string }, options: { idempotencyKey?: string } = {}): Promise<{ workspace: Workspace }> {
-    return this.#http.post('/v1/workspaces', { body: params, idempotencyKey: options.idempotencyKey });
+    return this.#http.postWithHeaderReplay('/v1/workspaces', {
+      body: params,
+      idempotencyKey: options.idempotencyKey,
+    });
   }
 
   retrieve(workspaceId: string): Promise<{ workspace: Workspace }> {
