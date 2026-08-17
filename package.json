@@ -3,7 +3,7 @@
   "version": "0.4.0",
   "description": "Official Node.js server SDK for SeatLayer inventory, holds, booking references, allocations, and reports. Secret-key only.",
   "license": "MIT",
-  "homepage": "https://docs.seatlayer.io/server-api/",
+  "homepage": "https://seatlayer.io/",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/seatlayer/seatlayer-node.git"
