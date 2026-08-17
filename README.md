@@ -32,8 +32,8 @@ import { SeatLayer } from '@seatlayer/server';
 
 const seatlayer = new SeatLayer(process.env.SEATLAYER_SECRET_KEY!);
 
-// 1. Provision a venue for a new organiser from one of your templates.
-const { meta: chart } = await seatlayer.charts.copy('c_template_arena');
+// 1. Materialize a published catalog template as the organiser's draft chart.
+const { meta: chart } = await seatlayer.templates.instantiateTemplate('arena');
 await seatlayer.charts.publish(chart.id);
 
 // 2. Create an event on it.
@@ -275,7 +275,7 @@ requests.
 ## Reliability
 
 **Retries and idempotency.** Reads retry 408, 429 and 5xx responses with backoff. Only chart create,
-chart copy, event create and workspace create opt into mutation retries: the SDK generates one
+chart copy, template instantiation, event create and workspace create opt into mutation retries: the SDK generates one
 `Idempotency-Key` and reuses it for every attempt. All other mutations are single-attempt, even if
 you supply a key.
 

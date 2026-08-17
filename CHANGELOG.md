@@ -2,8 +2,13 @@
 
 ## Unreleased
 
+- Added template instantiation and ticket-release management (`Templates.instantiateTemplate`,
+  `Events.listTicketReleases`, `Events.updateTicketReleases`, and
+  `Events.closeTicketRelease`). Template instantiation uses exact header replay;
+  release replacement and close deliberately remain single-attempt.
+
 - **Security/reliability:** Mutations now default to a single attempt. Automatic header-replay
-  retries are limited to chart create/copy, event create, and workspace create, preventing
+  retries are limited to chart create/copy, template instantiation, event create, and workspace create, preventing
   transient failures from duplicating holds or best-available results and from issuing extra
   show-once credentials.
 - **API contracts:** Booking and cancellation now require a non-empty `bookingRef`; chart copy

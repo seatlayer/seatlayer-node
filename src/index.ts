@@ -10,6 +10,7 @@ import { Channels } from './resources/channels.js';
 import { Events } from './resources/events.js';
 import { Inventory } from './resources/inventory.js';
 import { Sessions } from './resources/sessions.js';
+import { Templates } from './resources/templates.js';
 import { Webhooks } from './resources/webhooks.js';
 import { Workspaces } from './resources/workspaces.js';
 import type { ReadinessReport } from './types.js';
@@ -20,6 +21,7 @@ export class SeatLayer {
   readonly events: Events;
   readonly inventory: Inventory;
   readonly sessions: Sessions;
+  readonly templates: Templates;
   readonly webhooks: Webhooks;
   readonly workspaces: Workspaces;
 
@@ -38,6 +40,7 @@ export class SeatLayer {
     this.events = new Events(this.#http);
     this.inventory = new Inventory(this.#http);
     this.sessions = new Sessions(this.#http);
+    this.templates = new Templates(this.#http);
     this.webhooks = new Webhooks(this.#http);
     this.workspaces = new Workspaces(this.#http);
   }
@@ -103,6 +106,7 @@ export type {
   EventUpdateParams,
   PosterImage,
 } from './resources/events.js';
+export type { InstantiateTemplateOptions, InstantiateTemplateParams } from './resources/templates.js';
 export type * from './types.js';
 
 export default SeatLayer;

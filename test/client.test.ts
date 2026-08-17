@@ -15,6 +15,7 @@ import {
   type EventDetail,
   type EventLogPage,
   type EventReportEnvelope,
+  type TicketReleaseList,
   type BestAvailableHoldResult,
   type HoldInspection,
   type HoldResult,
@@ -120,20 +121,22 @@ describe('requests', () => {
       { status: 201, body: {} },
       { status: 201, body: {} },
       { status: 201, body: {} },
+      { status: 201, body: {} },
       { status: 200, body: {} },
     ]);
     await sdk.events.list();
     await sdk.events.create({ chartId: 'c_1' });
     await sdk.charts.create({ name: 'Arena' });
     await sdk.charts.copy('c_1');
+    await sdk.templates.instantiateTemplate('arena');
     await sdk.workspaces.create({ name: 'Promoter' });
     await sdk.inventory.hold('ev_1', { labels: ['A-1'] });
 
     expect(call(0).headers['Idempotency-Key']).toBeUndefined();
-    for (const index of [1, 2, 3, 4]) {
+    for (const index of [1, 2, 3, 4, 5]) {
       expect(call(index).headers['Idempotency-Key']).toMatch(/^[A-Za-z0-9._:-]{1,128}$/);
     }
-    expect(call(5).headers['Idempotency-Key']).toBeUndefined();
+    expect(call(6).headers['Idempotency-Key']).toBeUndefined();
   });
 
   it('honours a caller-supplied idempotency key', async () => {
@@ -674,6 +677,75 @@ describe('charts', () => {
       workspaceId: 'ws_promoter',
     });
     expect(call(0).headers['Idempotency-Key']).toBe('copy-promoter-arena');
+  });
+});
+
+describe('templates and ticket releases', () => {
+  it('instantiates a template with an object body, encoded id, and caller replay key', async () => {
+    const { sdk, call } = client([{ status: 201, body: { meta: { id: 'c_draft' } } }]);
+
+    const result = await sdk.templates.instantiateTemplate('arena/2026', {}, {
+      idempotencyKey: 'template-arena-2026',
+    });
+
+    expect(result.meta.id).toBe('c_draft');
+    expect(call(0).url).toBe('https://api.seatlayer.io/v1/templates/arena%2F2026/instantiate');
+    expect(call(0).method).toBe('POST');
+    expect(call(0).headers['Idempotency-Key']).toBe('template-arena-2026');
+    expect(JSON.parse(call(0).body)).toEqual({});
+  });
+
+  it('lists, replaces, and closes ticket releases with distinct input and live response types', async () => {
+    const { sdk, call } = client([
+      { status: 200, body: { releases: [{
+        id: 'rel_0123456789ab', position: 1, name: 'Early', categoryKey: null,
+        price: 2500, previousPrice: null, quota: 10, startsAt: null, endsAt: null,
+        action: 'buy', actionUrl: null, soldOutAt: null, consumed: 2, remaining: 8,
+      }] } },
+      { status: 200, body: { releases: [] } },
+      { status: 200, body: { releases: [] } },
+    ]);
+
+    const listed = await sdk.events.listTicketReleases('ev/1');
+    await sdk.events.updateTicketReleases('ev/1', [{ name: 'Early', price: 2500, quota: 10 }]);
+    await sdk.events.closeTicketRelease('ev/1', 'rel/0123456789ab');
+
+    expectTypeOf(listed).toEqualTypeOf<TicketReleaseList>();
+    expect(listed.releases[0]).toMatchObject({ consumed: 2, remaining: 8 });
+    expect(call(0).url).toBe('https://api.seatlayer.io/v1/events/ev%2F1/releases');
+    expect(call(1).method).toBe('PUT');
+    expect(JSON.parse(call(1).body)).toEqual({
+      releases: [{ name: 'Early', price: 2500, quota: 10 }],
+    });
+    expect(call(2).url).toBe(
+      'https://api.seatlayer.io/v1/events/ev%2F1/releases/rel%2F0123456789ab/close',
+    );
+  });
+
+  it('replays template instantiation but keeps release mutations single-attempt', async () => {
+    const replay = client([
+      { status: 429, body: { error: 'rate_limited' }, headers: { 'retry-after': '0' } },
+      { status: 201, body: { meta: { id: 'c_draft' } } },
+    ]);
+    await replay.sdk.templates.instantiateTemplate('arena');
+    expect(replay.calls).toHaveLength(2);
+    expect(replay.call(0).headers['Idempotency-Key']).toBe(replay.call(1).headers['Idempotency-Key']);
+
+    const update = client([
+      { status: 429, body: { error: 'rate_limited' }, headers: { 'retry-after': '0' } },
+    ]);
+    await expect(update.sdk.events.updateTicketReleases('ev_1', [])).rejects.toBeInstanceOf(
+      SeatLayerRateLimitError,
+    );
+    expect(update.calls).toHaveLength(1);
+
+    const close = client([
+      { status: 429, body: { error: 'rate_limited' }, headers: { 'retry-after': '0' } },
+    ]);
+    await expect(close.sdk.events.closeTicketRelease('ev_1', 'rel_0123456789ab')).rejects.toBeInstanceOf(
+      SeatLayerRateLimitError,
+    );
+    expect(close.calls).toHaveLength(1);
   });
 });
 

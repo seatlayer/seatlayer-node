@@ -10,6 +10,8 @@ import type {
   EventSectionState,
   KeyMode,
   SalesAliasResult,
+  TicketReleaseList,
+  TicketReleaseReplaceInput,
 } from '../types.js';
 
 export interface EventListOptions {
@@ -166,6 +168,32 @@ export class Events {
 
   archive(eventKey: string): Promise<ArchiveEventResult> {
     return this.#http.post(`/v1/events/${encodeURIComponent(eventKey)}/archive`);
+  }
+
+  /** List releases with current quota consumption. */
+  listTicketReleases(eventKey: string): Promise<TicketReleaseList> {
+    return this.#http.get(`/v1/events/${encodeURIComponent(eventKey)}/releases`);
+  }
+
+  /**
+   * Replace the complete, ordered release list. This remains single-attempt:
+   * the public contract has no replay guarantee, so callers decide whether a
+   * failed response should be read back or submitted again.
+   */
+  updateTicketReleases(
+    eventKey: string,
+    releases: TicketReleaseReplaceInput[],
+  ): Promise<TicketReleaseList> {
+    return this.#http.put(`/v1/events/${encodeURIComponent(eventKey)}/releases`, {
+      body: { releases },
+    });
+  }
+
+  /** Close a single release immediately, retaining its reporting provenance. */
+  closeTicketRelease(eventKey: string, releaseId: string): Promise<TicketReleaseList> {
+    return this.#http.post(
+      `/v1/events/${encodeURIComponent(eventKey)}/releases/${encodeURIComponent(releaseId)}/close`,
+    );
   }
 
   /** Read the checkout window (ms) buyers get for this event. */

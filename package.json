@@ -1,6 +1,6 @@
 {
   "name": "@seatlayer/server",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "description": "Official Node.js server SDK for SeatLayer inventory, holds, booking references, allocations, and reports. Secret-key only.",
   "license": "MIT",
   "homepage": "https://docs.seatlayer.io/server-api/",

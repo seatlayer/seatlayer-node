@@ -116,6 +116,43 @@ export interface ArchiveEventResult {
   status: 'archived';
 }
 
+/** A live ticket release, including server-computed quota consumption. */
+export interface TicketRelease {
+  id: string;
+  position: number;
+  name: string;
+  categoryKey: string | null;
+  price: number;
+  previousPrice: number | null;
+  quota: number | null;
+  startsAt: number | null;
+  endsAt: number | null;
+  action: 'buy' | 'apply' | 'invoice';
+  actionUrl: string | null;
+  soldOutAt: number | null;
+  consumed?: number;
+  remaining?: number | null;
+}
+
+/** Input for whole-list release replacement; consumption is response-only. */
+export interface TicketReleaseReplaceInput {
+  /** Omit or set null for a release the API should create. */
+  id?: string | null;
+  name: string;
+  categoryKey?: string | null;
+  price: number;
+  previousPrice?: number | null;
+  quota?: number | null;
+  startsAt?: number | null;
+  endsAt?: number | null;
+  action?: 'buy' | 'apply' | 'invoice';
+  actionUrl?: string | null;
+}
+
+export interface TicketReleaseList {
+  releases: TicketRelease[];
+}
+
 /** A priced line item. `unitPrice` is in `currency`, not in minor units. */
 export interface HoldLineItem {
   label: string;
