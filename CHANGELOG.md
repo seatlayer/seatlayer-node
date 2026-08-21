@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 0.5.1 — 2026-08-21
+
 - `PerformanceGroupHold` now types the fields a host decides to charge on:
   `active`, `expiresAt`, `decision`, `holdId`, `groupId`, `createdAt`,
   `convergedAt`, `expiredAt`, `buyerSessionId`, `selectionMode`, `buyerRef` and
