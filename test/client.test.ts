@@ -157,6 +157,64 @@ describe('requests', () => {
     await sdk.charts.list({ workspaceId: 'ws_1' });
     expect(call(0).url).toBe('https://api.seatlayer.io/v1/charts?workspaceId=ws_1');
   });
+
+  it('maps the full Performance Groups lifecycle to its secret-key server routes', async () => {
+    const { sdk, call } = client([
+      { status: 200, body: { performanceGroups: [], nextCursor: null } },
+      { status: 201, body: { performanceGroup: {} } },
+      { status: 200, body: { performanceGroup: {} } },
+      { status: 204 },
+      { status: 202, body: { performanceGroup: {}, lifecycleOperation: { operationId: 'pga_1', terminal: false } } },
+      { status: 200, body: { performanceGroup: {}, lifecycleOperation: { operationId: 'pgc_1', terminal: true } } },
+      { status: 200, body: { performanceGroup: {}, lifecycleOperation: { operationId: 'pga_1', terminal: false } } },
+      { status: 201, body: { sessionId: 'pgbs_1', token: 'bsg_secret' } },
+      { status: 200, body: { sessions: [] } },
+      { status: 200, body: { ok: true, sessionId: 'pgbs_1' } },
+      { status: 200, body: { hold: {} } },
+      { status: 202, body: { booking: { state: 'book_pending' } } },
+      { status: 200, body: { booking: { state: 'booked' } } },
+    ]);
+    const groupKey = 'pg_a/b';
+
+    await sdk.performanceGroups.listPerformanceGroups({ workspaceId: 'ws_1', state: 'draft' });
+    await sdk.performanceGroups.createPerformanceGroup(
+      { name: 'Weekend run', eventKeys: ['ev_1', 'ev_2'] },
+      { idempotencyKey: 'weekend-run-1' },
+    );
+    await sdk.performanceGroups.retrievePerformanceGroup(groupKey);
+    await expect(sdk.performanceGroups.deletePerformanceGroup(groupKey)).resolves.toBeUndefined();
+    await sdk.performanceGroups.activatePerformanceGroup(groupKey, 1);
+    await sdk.performanceGroups.closePerformanceGroup(groupKey, 2);
+    await sdk.performanceGroups.retrievePerformanceGroupLifecycle(groupKey, 'pga_1');
+    await sdk.performanceGroups.createPerformanceGroupBuyerAccessSession(groupKey, {
+      allowedOrigin: 'https://tickets.example.test', includePublic: true,
+    });
+    await sdk.performanceGroups.listPerformanceGroupBuyerAccessSessions(groupKey, { limit: 25 });
+    await sdk.performanceGroups.revokePerformanceGroupBuyerAccessSession(groupKey, 'pgbs_1');
+    await sdk.performanceGroups.retrievePerformanceGroupHold(groupKey, 'pgh_1');
+    await sdk.performanceGroups.bookPerformanceGroupHold(groupKey, 'pgh_1', {
+      bookActionId: 'book_1', bookingRef: 'order_1',
+    });
+    await sdk.performanceGroups.retrievePerformanceGroupBooking(groupKey, 'book_1');
+
+    const base = 'https://api.seatlayer.io/v1/performance-groups/pg_a%2Fb';
+    expect(call(0).url).toBe('https://api.seatlayer.io/v1/performance-groups?workspaceId=ws_1&state=draft');
+    expect(call(1).url).toBe('https://api.seatlayer.io/v1/performance-groups');
+    expect(call(1).headers['Idempotency-Key']).toBe('weekend-run-1');
+    expect(call(2).url).toBe(base);
+    expect(call(3).method).toBe('DELETE');
+    expect(call(4).url).toBe(`${base}/activate`);
+    expect(call(5).url).toBe(`${base}/close`);
+    expect(call(6).url).toBe(`${base}/lifecycle/pga_1`);
+    expect(call(7).url).toBe(`${base}/buyer-access-sessions`);
+    expect(call(7).headers['Idempotency-Key']).toBeUndefined();
+    expect(call(8).url).toBe(`${base}/buyer-access-sessions?limit=25`);
+    expect(call(9).url).toBe(`${base}/buyer-access-sessions/pgbs_1`);
+    expect(call(10).url).toBe(`${base}/holds/pgh_1`);
+    expect(call(11).url).toBe(`${base}/holds/pgh_1/book`);
+    expect(call(11).headers['Idempotency-Key']).toBeUndefined();
+    expect(call(12).url).toBe(`${base}/bookings/book_1`);
+  });
 });
 
 describe('errors', () => {
