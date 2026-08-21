@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+- `PerformanceGroupHold` now types the fields a host decides to charge on:
+  `active`, `expiresAt`, `decision`, `holdId`, `groupId`, `createdAt`,
+  `convergedAt`, `expiredAt`, `buyerSessionId`, `selectionMode`, `buyerRef` and
+  `partnerRef`. They were always in the response but reached callers only
+  through the index signature, so TypeScript could not point at `active` — the
+  one field that says whether a committed hold has already expired and must not
+  be booked.
+
 ## 0.5.0 — 2026-08-21
 
 - Added `performanceGroups`, the trusted server resource for fixed two-to-eight

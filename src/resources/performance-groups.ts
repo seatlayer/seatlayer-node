@@ -84,9 +84,33 @@ export interface PerformanceGroupBuyerAccessReveal extends PerformanceGroupBuyer
   performanceGroupKey: string;
 }
 
+/**
+ * The trusted server projection of one group hold. Charge from this, never from
+ * what the browser reports.
+ *
+ * Check `active` before you take money: a hold that has passed `expiresAt` has
+ * already released its seats, and booking it answers `409`. `state` alone is not
+ * the test — a `committed` hold whose expiry has elapsed is no longer active.
+ */
 export interface PerformanceGroupHold {
   operationId: string;
+  groupId: string;
+  /** Inventory-level id of the group hold, distinct from `operationId`. */
+  holdId: string;
   state: 'preparing' | 'commit_pending' | 'committed' | 'expire_pending' | 'expired' | 'booked' | 'abort_pending' | 'aborted';
+  /** How the group converged. `null` while the decision is still outstanding. */
+  decision: 'commit' | 'abort' | null;
+  /** Committed AND unexpired — the only safe condition to charge against. */
+  active: boolean;
+  expiresAt: number | null;
+  createdAt: number;
+  convergedAt: number | null;
+  expiredAt: number | null;
+  /** The browser session that created the hold, when one did. */
+  buyerSessionId: string | null;
+  selectionMode: 'same_seat' | 'per_performance';
+  buyerRef: string | null;
+  partnerRef: string | null;
   currency: string;
   groupRevision: number;
   allocations: Array<{
@@ -97,6 +121,7 @@ export interface PerformanceGroupHold {
     configuredValue: number;
     items: HoldLineItem[];
   }>;
+  /** Forward compatibility: fields this SDK version does not model yet. */
   [key: string]: unknown;
 }
 

@@ -215,6 +215,48 @@ describe('requests', () => {
     expect(call(11).headers['Idempotency-Key']).toBeUndefined();
     expect(call(12).url).toBe(`${base}/bookings/book_1`);
   });
+
+  it('types the group hold fields a host decides to charge on', async () => {
+    // The hold projection is what money is moved against, so `active` and
+    // `expiresAt` have to be reachable without an `as` cast. They arrived only
+    // through the index signature until 0.5.1: a committed hold whose expiry has
+    // elapsed is NOT bookable, and `state` alone does not say so.
+    const { sdk } = client([{
+      status: 200,
+      body: {
+        hold: {
+          operationId: 'pgh_1',
+          groupId: 'pg_1',
+          holdId: 'pghold_1',
+          state: 'committed',
+          decision: 'commit',
+          active: true,
+          expiresAt: 1_900_000_000_000,
+          createdAt: 1_800_000_000_000,
+          convergedAt: 1_800_000_000_500,
+          expiredAt: null,
+          buyerSessionId: 'pgbs_1',
+          selectionMode: 'same_seat',
+          buyerRef: 'buyer-9',
+          partnerRef: null,
+          currency: 'GBP',
+          groupRevision: 2,
+          allocations: [],
+        },
+      },
+    }]);
+
+    const { hold } = await sdk.performanceGroups.retrievePerformanceGroupHold('pg_1', 'pgh_1');
+    expectTypeOf(hold.active).toEqualTypeOf<boolean>();
+    expectTypeOf(hold.expiresAt).toEqualTypeOf<number | null>();
+    expectTypeOf(hold.decision).toEqualTypeOf<'commit' | 'abort' | null>();
+    expectTypeOf(hold.selectionMode).toEqualTypeOf<'same_seat' | 'per_performance'>();
+    expectTypeOf(hold.buyerSessionId).toEqualTypeOf<string | null>();
+    expect(hold.active).toBe(true);
+    expect(hold.holdId).toBe('pghold_1');
+    expect(hold.decision).toBe('commit');
+    expect(hold.expiresAt).toBe(1_900_000_000_000);
+  });
 });
 
 describe('errors', () => {
