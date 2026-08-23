@@ -2,6 +2,8 @@ import type { HttpClient } from '../http.js';
 import type {
   ArchiveEventResult,
   EventCounts,
+  EventConfigurationBinding,
+  EventConfigurationBindingUpdateParams,
   EventDetail,
   EventEnvelope,
   EventLogPage,
@@ -128,6 +130,28 @@ export class Events {
 
   retrieve(eventKey: string): Promise<EventDetail> {
     return this.#http.get(`/v1/events/${encodeURIComponent(eventKey)}`);
+  }
+
+  /** Read the Event's exact immutable configuration binding and audit history. */
+  retrieveConfigurationBinding(eventKey: string): Promise<EventConfigurationBinding> {
+    return this.#http.get(
+      `/v1/events/${encodeURIComponent(eventKey)}/event-configuration`,
+    );
+  }
+
+  /**
+   * Bind an exact published version, or pass `configuration: null` to detach.
+   * This compare-and-set mutation is deliberately single-attempt because the
+   * public operation does not promise exact response replay.
+   */
+  updateConfigurationBinding(
+    eventKey: string,
+    params: EventConfigurationBindingUpdateParams,
+  ): Promise<EventConfigurationBinding> {
+    return this.#http.put(
+      `/v1/events/${encodeURIComponent(eventKey)}/event-configuration`,
+      { body: params },
+    );
   }
 
   update(eventKey: string, params: EventUpdateParams): Promise<EventEnvelope> {

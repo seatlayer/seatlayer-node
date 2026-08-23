@@ -105,6 +105,37 @@ export interface EventDetail {
   };
 }
 
+/** Exact immutable Event configuration version. */
+export interface EventConfigurationRef {
+  id: string;
+  version: number;
+}
+
+/** One append-only Event configuration binding transition. */
+export interface EventConfigurationBindingAudit {
+  id: string;
+  from: EventConfigurationRef | null;
+  to: EventConfigurationRef | null;
+  revision: number;
+  actor: string;
+  createdAt: number;
+}
+
+/** Current exact Event configuration binding and its complete audit history. */
+export interface EventConfigurationBinding {
+  configuration: EventConfigurationRef | null;
+  revision: number;
+  changedBy: string | null;
+  changedAt: number | null;
+  audit: EventConfigurationBindingAudit[];
+}
+
+/** Compare-and-set input for binding or detaching an exact configuration version. */
+export interface EventConfigurationBindingUpdateParams {
+  expectedRevision: number;
+  configuration: EventConfigurationRef | null;
+}
+
 export interface SalesAliasResult {
   status: string;
   state: string;

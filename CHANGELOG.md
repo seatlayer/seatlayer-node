@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- Added exact immutable Event configuration binding reads and compare-and-set
+  attach/detach through `Events.retrieveConfigurationBinding` and
+  `Events.updateConfigurationBinding`. Updates remain deliberately
+  single-attempt.
+
 - Added template instantiation and ticket-release management (`Templates.instantiateTemplate`,
   `Events.listTicketReleases`, `Events.updateTicketReleases`, and
   `Events.closeTicketRelease`). Template instantiation uses exact header replay;

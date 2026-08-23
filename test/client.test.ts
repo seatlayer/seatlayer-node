@@ -13,6 +13,7 @@ import {
   type ChannelReportEnvelope,
   type EventMeta,
   type EventDetail,
+  type EventConfigurationBinding,
   type EventLogPage,
   type EventReportEnvelope,
   type TicketReleaseList,
@@ -112,6 +113,48 @@ describe('requests', () => {
     const { sdk, call } = client([{ status: 200, body: {} }]);
     await sdk.events.retrieve('ev/../admin');
     expect(call(0).url).toBe('https://api.seatlayer.io/v1/events/ev%2F..%2Fadmin');
+  });
+
+  it('reads, binds and explicitly detaches an exact Event configuration version', async () => {
+    const binding = {
+      configuration: { id: 'ec_touring', version: 3 }, revision: 7,
+      changedBy: 'api-key:key_1', changedAt: 123,
+      audit: [{
+        id: 'eca_1', from: null, to: { id: 'ec_touring', version: 3 },
+        revision: 7, actor: 'api-key:key_1', createdAt: 123,
+      }],
+    };
+    const { sdk, call } = client([
+      { status: 200, body: binding },
+      { status: 200, body: binding },
+      { status: 200, body: { ...binding, configuration: null, revision: 8 } },
+    ]);
+
+    const retrieved = await sdk.events.retrieveConfigurationBinding('ev / main');
+    expectTypeOf(retrieved).toEqualTypeOf<EventConfigurationBinding>();
+    expect(retrieved.audit[0]?.to).toEqual({ id: 'ec_touring', version: 3 });
+    await sdk.events.updateConfigurationBinding('ev / main', {
+      expectedRevision: 6,
+      configuration: { id: 'ec_touring', version: 3 },
+    });
+    await sdk.events.updateConfigurationBinding('ev / main', {
+      expectedRevision: 7,
+      configuration: null,
+    });
+
+    for (const index of [0, 1, 2]) {
+      expect(call(index).url).toBe(
+        'https://api.seatlayer.io/v1/events/ev%20%2F%20main/event-configuration',
+      );
+    }
+    expect(call(0).method).toBe('GET');
+    expect(JSON.parse(call(1).body)).toEqual({
+      expectedRevision: 6,
+      configuration: { id: 'ec_touring', version: 3 },
+    });
+    expect(JSON.parse(call(2).body)).toEqual({ expectedRevision: 7, configuration: null });
+    expect(call(1).headers['Idempotency-Key']).toBeUndefined();
+    expect(call(2).headers['Idempotency-Key']).toBeUndefined();
   });
 
   it('generates an Idempotency-Key only for header-replay mutations', async () => {
