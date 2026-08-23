@@ -1,11 +1,29 @@
 # Changelog
 
-## 0.5.0 — 2026-08-23
+## 0.6.0 — 2026-08-23
 
 - Added exact immutable Event configuration binding reads and compare-and-set
   attach/detach through `Events.retrieveConfigurationBinding` and
   `Events.updateConfigurationBinding`. Updates remain deliberately
   single-attempt.
+
+## 0.5.1 — 2026-08-21
+
+- `PerformanceGroupHold` now types the fields a host decides to charge on:
+  `active`, `expiresAt`, `decision`, `holdId`, `groupId`, `createdAt`,
+  `convergedAt`, `expiredAt`, `buyerSessionId`, `selectionMode`, `buyerRef` and
+  `partnerRef`. They were always in the response but reached callers only
+  through the index signature, so TypeScript could not point at `active` — the
+  one field that says whether a committed hold has already expired and must not
+  be booked.
+
+## 0.5.0 — 2026-08-21
+
+- Added `performanceGroups`, the trusted server resource for fixed two-to-eight
+  performance runs. It creates and activates groups, mints one-time browser
+  access, retrieves authoritative group holds, and confirms bookings with
+  stable action and order references. Browser-only group routes remain outside
+  this secret-key SDK.
 
 - Added template instantiation and ticket-release management (`Templates.instantiateTemplate`,
   `Events.listTicketReleases`, `Events.updateTicketReleases`, and

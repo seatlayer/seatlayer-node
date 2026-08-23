@@ -9,6 +9,7 @@ import { Charts } from './resources/charts.js';
 import { Channels } from './resources/channels.js';
 import { Events } from './resources/events.js';
 import { Inventory } from './resources/inventory.js';
+import { PerformanceGroups } from './resources/performance-groups.js';
 import { Sessions } from './resources/sessions.js';
 import { Templates } from './resources/templates.js';
 import { Webhooks } from './resources/webhooks.js';
@@ -20,6 +21,7 @@ export class SeatLayer {
   readonly channels: Channels;
   readonly events: Events;
   readonly inventory: Inventory;
+  readonly performanceGroups: PerformanceGroups;
   readonly sessions: Sessions;
   readonly templates: Templates;
   readonly webhooks: Webhooks;
@@ -39,6 +41,7 @@ export class SeatLayer {
     this.channels = new Channels(this.#http);
     this.events = new Events(this.#http);
     this.inventory = new Inventory(this.#http);
+    this.performanceGroups = new PerformanceGroups(this.#http);
     this.sessions = new Sessions(this.#http);
     this.templates = new Templates(this.#http);
     this.webhooks = new Webhooks(this.#http);
@@ -72,6 +75,20 @@ export {
   type ApiErrorBody,
 } from './errors.js';
 export type { ClientOptions, RequestOptions } from './http.js';
+export type {
+  CreatePerformanceGroupBuyerAccessSessionParams,
+  CreatePerformanceGroupParams,
+  PerformanceGroup,
+  PerformanceGroupBooking,
+  PerformanceGroupBuyerAccessReveal,
+  PerformanceGroupBuyerAccessSession,
+  PerformanceGroupDetail,
+  PerformanceGroupHold,
+  PerformanceGroupLifecycleOperation,
+  PerformanceGroupLifecycleResult,
+  PerformanceGroupListOptions,
+  PerformanceGroupPerformance,
+} from './resources/performance-groups.js';
 export type {
   AccessLink,
   AccessLinkReveal,

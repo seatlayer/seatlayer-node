@@ -1,0 +1,60 @@
+name: Release
+
+# Publishes @seatlayer/server to npm on a version tag.
+#
+# 0.5.0 went out by hand, which is why it carries no provenance: nothing links
+# that tarball to the commit it was built from. Every other server SDK lane that
+# needs a publish step has one of these; this closes the gap for npm.
+#
+# To release: bump the version in package.json, land it on main, then push the
+# matching tag.
+#
+#     git tag v0.5.1 && git push origin v0.5.1
+#
+# The gate runs again here rather than trusting that CI was green on main — a
+# tag can point at any commit, including one CI never saw.
+
+on:
+  push:
+    tags: ['v*']
+
+concurrency:
+  group: seatlayer-server-sdk-release
+  cancel-in-progress: false
+
+permissions: {}
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      # Required for npm provenance, and the only elevated permission here.
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          registry-url: 'https://registry.npmjs.org'
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      - name: Refuse to publish if the tag and the package version disagree
+        run: |
+          tag="${GITHUB_REF_NAME#v}"
+          pkg="$(node -p "require('./package.json').version")"
+          if [ "$tag" != "$pkg" ]; then
+            echo "::error::tag v$tag does not match package version $pkg"
+            exit 1
+          fi
+          echo "✓ releasing @seatlayer/server@$pkg"
+
+      # typecheck + tests + build + publint/attw. Same gate as CI and as
+      # prepublishOnly, run against the tagged tree.
+      - run: pnpm validate
+
+      - name: Publish with provenance
+        run: pnpm publish --access public --no-git-checks --provenance
