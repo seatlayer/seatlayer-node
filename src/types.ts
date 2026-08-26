@@ -518,7 +518,29 @@ export type WebhookEventName =
   | 'hold.created'
   | 'hold.extended'
   | 'event.created'
-  | 'event.soldout';
+  | 'event.soldout'
+  | 'season.structure.activated'
+  | 'season.structure.closed'
+  | 'season.structure.archived'
+  | 'season.plan.published'
+  | 'season.plan.superseded'
+  | 'season.sales.opened'
+  | 'season.sales.paused'
+  | 'season.sales.ended'
+  | 'season.hold.committed'
+  | 'season.hold.released'
+  | 'season.hold.expired'
+  | 'season.booking.confirmed'
+  | 'season.booking.cancelled'
+  | 'season.booking.emergency_requested'
+  | 'season.renewal.offered'
+  | 'season.renewal.intent_received'
+  | 'season.renewal.renewed'
+  | 'season.renewal.declined'
+  | 'season.renewal.lapsed'
+  | 'season.renewal.released'
+  | 'season.operation.partial_terminal'
+  | 'season.amendment.applied';
 
 export interface Webhook {
   id: string;

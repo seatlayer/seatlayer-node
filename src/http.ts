@@ -39,6 +39,8 @@ export interface RequestOptions {
    */
   idempotencyKey?: string;
   signal?: AbortSignal;
+  /** Observe the final HTTP response without consuming its body. */
+  onResponse?: (response: Response) => void;
 }
 
 const DEFAULT_BASE_URL = 'https://api.seatlayer.io';
@@ -138,6 +140,15 @@ export class HttpClient {
     return this.#request<T>('POST', path, options, true);
   }
 
+  /** Internal typed-operation path for any mutation backed by exact header replay. */
+  mutationWithHeaderReplay<T>(
+    method: 'POST' | 'PATCH' | 'DELETE',
+    path: string,
+    options: RequestOptions = {},
+  ): Promise<T> {
+    return this.#request<T>(method, path, options, true);
+  }
+
   async #request<T>(
     method: string,
     path: string,
@@ -210,6 +221,7 @@ export class HttpClient {
       const requestId = response.headers.get('x-request-id');
 
       if (response.ok) {
+        options.onResponse?.(response);
         if (response.status === 204) return undefined as T;
         const text = await response.text();
         return (text ? JSON.parse(text) : undefined) as T;
@@ -223,6 +235,7 @@ export class HttpClient {
         continue;
       }
 
+      options.onResponse?.(response);
       throw errorFromResponse(response.status, body, requestId, retryAfter);
     }
 

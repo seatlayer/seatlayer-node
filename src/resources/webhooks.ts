@@ -27,6 +27,11 @@ export class Webhooks {
     return this.#http.delete(`/v1/webhooks/${encodeURIComponent(webhookId)}`);
   }
 
+  /** Replacement secret is returned once; subscription identity/history remain unchanged. */
+  rotateSecret(webhookId: string): Promise<{ sub: Webhook; secret: string }> {
+    return this.#http.post(`/v1/webhooks/${encodeURIComponent(webhookId)}/rotate-secret`, { body: {} });
+  }
+
   listDeliveries(webhookId: string, options: {
     limit?: number;
     status?: 'ok' | 'failed';

@@ -11,6 +11,7 @@ import { Events } from './resources/events.js';
 import { Inventory } from './resources/inventory.js';
 import { PerformanceGroups } from './resources/performance-groups.js';
 import { Sessions } from './resources/sessions.js';
+import { Seasons } from './resources/seasons.js';
 import { Templates } from './resources/templates.js';
 import { Webhooks } from './resources/webhooks.js';
 import { Workspaces } from './resources/workspaces.js';
@@ -23,6 +24,7 @@ export class SeatLayer {
   readonly inventory: Inventory;
   readonly performanceGroups: PerformanceGroups;
   readonly sessions: Sessions;
+  readonly seasons: Seasons;
   readonly templates: Templates;
   readonly webhooks: Webhooks;
   readonly workspaces: Workspaces;
@@ -43,6 +45,7 @@ export class SeatLayer {
     this.inventory = new Inventory(this.#http);
     this.performanceGroups = new PerformanceGroups(this.#http);
     this.sessions = new Sessions(this.#http);
+    this.seasons = new Seasons(this.#http);
     this.templates = new Templates(this.#http);
     this.webhooks = new Webhooks(this.#http);
     this.workspaces = new Workspaces(this.#http);
@@ -89,6 +92,45 @@ export type {
   PerformanceGroupListOptions,
   PerformanceGroupPerformance,
 } from './resources/performance-groups.js';
+export {
+  SeasonLifecycleTimeoutError,
+  SeasonBookingTimeoutError,
+  type CreateSeasonParams,
+  type CreateSeasonPlanParams,
+  type Season,
+  type SeasonCompatibilityIssue,
+  type SeasonBuyerAccessReveal,
+  type SeasonBuyerAccessSession,
+  type SeasonBuyerRehearsalResult,
+  type SeasonBooking,
+  type SeasonBookingResult,
+  type SeasonDetail,
+  type SeasonLifecycleOperation,
+  type SeasonLifecycleResult,
+  type SeasonListOptions,
+  type SeasonPlan,
+  type SeasonHold,
+  type SeasonHolderImport,
+  type SeasonHolderImportRow,
+  type SeasonPlanPublicationResult,
+  type SeasonPublicationState,
+  type SeasonSalesState,
+  type SeasonSelectionParams,
+  type SeasonSourcePerformanceGroup,
+  type SeasonStructureState,
+  type SeasonRenewalOffer,
+  type SeasonOccurrence,
+  type SeasonAmendment,
+  type SeasonReport,
+  type SeasonOperationSummary,
+  type SeasonSupportLookup,
+  type SeasonOutboxOccurrence,
+  type SeasonAuditEntry,
+  type SeasonRenewalResult,
+  type SeasonValidation,
+  type WaitForSeasonLifecycleOptions,
+} from './resources/seasons.js';
+export { SeasonRenewalTimeoutError } from './resources/seasons.js';
 export type {
   AccessLink,
   AccessLinkReveal,

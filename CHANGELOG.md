@@ -1,5 +1,58 @@
 # Changelog
 
+## 0.7.0-season-s07.0 — unpublished candidate
+
+- Freezes the private-beta support lane for every Season operation through S06:
+  REST and Node source/candidate coverage are verified, while publication and
+  production availability remain unverified.
+- Types bounded operational feeds explicitly: renewal offers and amendments
+  return the latest 100, operations the latest 50, and outbox the latest 100;
+  each response reports `truncated`. The top-level Season catalogue retains its
+  opaque cursor contract.
+- Retains typed rate-limit failures, stable request IDs, exact mutation replay
+  policies, and bounded/cancellable `202` wait helpers that honor `Location`
+  and `Retry-After`.
+- This candidate is retained out of band only. No package registry or
+  production availability is claimed.
+
+## 0.7.0-season-s06.0 — unpublished candidate
+
+- Adds typed occurrence amendments with immutable revisions and retained
+  Contract/allocation outcomes, operational reports, support lookup, missed-event
+  replay, redacted audit, and versioned support export resources.
+- Outbox replay preserves the original occurrence identity and payload. Delivery
+  health means at least one real receiver returned 2xx; enqueue alone is not success.
+- This candidate is retained out of band only. No package registry or production
+  availability is claimed.
+
+## 0.7.0-season-s05.0 — unpublished candidate
+
+- Adds typed incumbent holder import dry-run/commit/status mapping with retained
+  prior Plan activation, prior Contract, existing booking, row decision,
+  Contract, and Seat Right identities.
+- Adds generate/list/read/inspect/extend/commit/decline/release renewal-offer
+  operations plus bounded polling of the exact committing offer.
+- Preserves explicit `partial_terminal` allocation outcomes and caller-stable
+  commit/order/booking identities; browser intent remains outside the trusted
+  server SDK and is never purchase proof.
+- This candidate is retained out of band only. No package registry or
+  production availability is claimed.
+
+## 0.7.0-season-s04.0 — unpublished candidate
+
+- Adds the typed `seasons` organizer resource for compatibility validation,
+  draft catalogue and multi-Plan management, structural activation/close/archive,
+  immutable Plan publication/supersession, separate sales controls, test-to-live
+  recreation, and bounded lifecycle polling.
+- Header-replay mutations retain one idempotency key across transport retries;
+  domain-exact lifecycle and sales actions remain single-attempt.
+- Adds the S04 trusted buyer-integration resource: show-once Season session
+  mint/list/revoke, authoritative hold inspection, caller-stable book/cancel,
+  bounded booking polling, and retained rehearsal validation. Cancellation
+  requires an explicit `preserve` or `release` right disposition.
+- This is a locally built validation candidate only. No package registry or
+  production availability is claimed.
+
 ## 0.6.1
 
 - Documentation only. Refreshes the README, adds frequently asked

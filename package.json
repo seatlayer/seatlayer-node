@@ -1,7 +1,7 @@
 {
   "name": "@seatlayer/server",
-  "version": "0.6.1",
-  "description": "Official Node.js server SDK for SeatLayer inventory, holds, booking references, allocations, and reports. Secret-key only.",
+  "version": "0.7.0-season-s07.0",
+  "description": "Official Node.js server SDK for SeatLayer inventory, Seasons, holds, booking references, allocations, and reports. Secret-key only.",
   "license": "MIT",
   "homepage": "https://seatlayer.io/",
   "repository": {
@@ -60,6 +60,7 @@
     "event-ticketing",
     "box-office",
     "inventory-management",
+    "season-tickets",
     "server-sdk",
     "nodejs",
     "typescript"

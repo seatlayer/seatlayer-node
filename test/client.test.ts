@@ -1065,6 +1065,7 @@ describe('webhook management contracts', () => {
       { status: 200, body: { subs: [sub] } },
       { status: 201, body: { sub, secret: 'whsec_once' } },
       { status: 200, body: { sub: { ...sub, disabled: true } } },
+      { status: 200, body: { sub: { ...sub, events: ['season.amendment.applied'] }, secret: 'whsec_rotated' } },
     ]);
 
     const listed = await sdk.webhooks.list();
@@ -1073,11 +1074,14 @@ describe('webhook management contracts', () => {
       events: ['seat.booked'],
     });
     const updated = await sdk.webhooks.update(sub.id, { disabled: true });
+    const rotated = await sdk.webhooks.rotateSecret('wh/1');
 
     expect(listed.subs[0]?.id).toBe('wh_1');
     expect(created.sub.id).toBe('wh_1');
     expect(created.secret).toBe('whsec_once');
     expect(updated.sub.disabled).toBe(true);
+    expect(rotated.secret).toBe('whsec_rotated');
+    expect(call(3).url).toBe('https://api.seatlayer.io/v1/webhooks/wh%2F1/rotate-secret');
     expect(JSON.parse(call(2).body)).toEqual({ disabled: true });
   });
 

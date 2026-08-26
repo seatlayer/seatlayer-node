@@ -71,6 +71,145 @@ if (process.env.NODE_ENV === 'production' && seatlayer.mode !== 'live') {
 }
 ```
 
+## Fixed Renewable Seasons (unpublished candidate)
+
+The `0.7.0-season-s07.0` source candidate adds the trusted organizer-side
+`seatlayer.seasons` resource. It has not been published to npm. Do not infer
+registry availability from this repository checkout.
+
+S06 adds identity-preserving reschedules, explicit replacement/cancellation
+exceptions with immutable amendment revisions, allocation/report health,
+missed-event replay, booking/holder support lookup, redacted audit, and a bounded
+versioned support export. Webhook delivery is counted only after a receiver
+returns 2xx; a replay request or queue enqueue is not reported as delivered.
+Operational feeds are deliberately bounded and report `truncated`; use exact
+resource reads for retained records. Only the top-level Season catalogue is
+cursor-paginated in this private-beta contract.
+
+Use a test key and test Events to validate the complete fixed Plan before
+creating anything. Validation is read-only and returns exact incompatibility
+codes, Event fields, and remediation.
+
+```ts
+const checked = await seatlayer.seasons.validateSeason({
+  eventKeys: ['ev_test_thursday_1', 'ev_test_thursday_2'],
+});
+if (!checked.valid) throw new Error(JSON.stringify(checked.issues));
+
+const { season: draft } = await seatlayer.seasons.createSeason({
+  name: 'Thursday series',
+  edition: '2026–27',
+  eventKeys: checked.eventKeys,
+}, { idempotencyKey: 'season-2026-thursday' });
+
+const activation = await seatlayer.seasons.activateSeason(draft.key, draft.revision);
+const active = await seatlayer.seasons.waitForSeasonLifecycle(activation);
+const plan = active.season.plans.find((candidate) => candidate.publicationState === 'draft')!;
+
+const publication = await seatlayer.seasons.publishSeasonPlan(
+  active.season.key,
+  plan.key,
+  active.season.revision,
+);
+const published = await seatlayer.seasons.waitForSeasonLifecycle(publication);
+```
+
+Activation does not publish a Plan, publication does not open sales, and the
+audience remains `embed_only`. `openSeasonSales` deliberately returns a
+conflict until the S04 buyer hold/book/cancel/webhook rehearsal record exists.
+Create all additional fixed Plans while the Season is still a draft. Each Plan
+is immutable after activation; published Plans can be superseded only while
+sales are closed or ended.
+
+A test Season is never promoted. `duplicateSeasonToLive` requires an explicit
+set of compatible live Event keys, creates new Season and Plan identities, and
+keeps sales closed. Lifecycle calls are single-attempt domain operations. If a
+response is non-terminal, poll only its retained `Location` through
+`waitForSeasonLifecycle`; do not invent a new action.
+
+### Season buyer integration (private-beta candidate)
+
+Mint the exact-origin browser session from trusted server code, keep its `bss_`
+token in memory, and pass it to the distinct JavaScript `SeasonPicker`. Before
+charging, retrieve the Season hold and use its trusted allocation/value fields.
+Book and cancel with caller-stable identities; cancellation has no implicit
+future-right policy.
+
+```ts
+const session = await seatlayer.seasons.createSeasonBuyerAccessSession(seasonKey, {
+  allowedOrigin: 'https://tickets.example.com',
+  includePublic: true,
+});
+const { hold } = await seatlayer.seasons.retrieveSeasonHold(seasonKey, operationId);
+const booked = await seatlayer.seasons.bookSeasonHold(seasonKey, operationId, {
+  bookActionId: 'sba_order_1183', bookingRef: 'order_1183',
+});
+await seatlayer.seasons.waitForSeasonBooking(seasonKey, booked);
+await seatlayer.seasons.cancelSeasonBooking(seasonKey, 'sba_order_1183', {
+  cancelActionId: 'sca_order_1183', bookingRef: 'order_1183',
+  planActivationId: session.planActivationId, rightDisposition: 'preserve',
+});
+```
+
+This surface is an unpublished validation candidate. It has not been released
+to a package registry and does not imply support in the other server SDKs.
+
+### Incumbent import and same-seat renewal (private-beta candidate)
+
+Dry-run the exact prior Contract/Plan/seat-set mapping before committing it.
+Every row carries a caller-stable row id, opaque holder and prior Contract
+references, and may retain the incumbent booking reference. Invalid or
+conflicting rows do not create a Contract or Seat Right.
+
+```ts
+const importInput = {
+  successorPlanActivationId: published.plan.activationId!,
+  rows: [{
+    rowId: 'row_ada',
+    holderRef: 'holder_ada',
+    priorPlanActivationId: 'spa_2026_saturday',
+    priorContractRef: 'legacy_contract_ada',
+    existingBookingRef: 'legacy_booking_ada',
+    labels: ['A-12'],
+  }],
+};
+
+const dryRun = await seatlayer.seasons.importSeasonHolders(
+  seasonKey,
+  { ...importInput, dryRun: true },
+  { idempotencyKey: 'incumbents-2027-dry-run' },
+);
+if (dryRun.import.rejectedCount) throw new Error(JSON.stringify(dryRun.import.rows));
+
+await seatlayer.seasons.importSeasonHolders(
+  seasonKey,
+  importInput,
+  { idempotencyKey: 'incumbents-2027-commit' },
+);
+const deadlineAt = Date.parse('2027-06-30T23:59:59Z');
+const { offers } = await seatlayer.seasons.createSeasonRenewalOffers(
+  seasonKey,
+  { successorPlanActivationId: importInput.successorPlanActivationId, deadlineAt },
+  { idempotencyKey: 'renewal-offers-2027' },
+);
+
+// Browser intent is not payment. Inspect and commit only after your trusted
+// host has made its commercial decision with the exact immutable Plan.
+const inspected = await seatlayer.seasons.inspectSeasonRenewalOffer(seasonKey, offers[0]!.offerId);
+const accepted = await seatlayer.seasons.commitSeasonRenewalOffer(seasonKey, inspected.offer.offerId, {
+  commitActionId: 'sba_renewal_ada_2027',
+  orderRef: 'order_ada_2027',
+  bookingRef: 'booking_ada_2027',
+  planActivationId: inspected.offer.successorPlanActivationId,
+});
+const terminal = await seatlayer.seasons.waitForSeasonRenewal(seasonKey, accepted);
+if (terminal.offer.state === 'partial_terminal') reconcile(terminal.offer.commitOutcomes);
+```
+
+Renewal intent requires a browser session bound to the exact `buyerRef`/holder.
+Extension is explicit and pre-lapse; no default extension is invented while
+organizer bounds and permission policy remain an owner-open rollout decision.
+
 ## The two selling flows
 
 **Buyer picks seats in the browser.** Your frontend holds them; your backend confirms the price and
