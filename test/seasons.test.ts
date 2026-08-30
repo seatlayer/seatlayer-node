@@ -2,6 +2,7 @@ import { describe, expect, expectTypeOf, it, vi } from 'vitest';
 import {
   SeatLayer,
   SeatLayerRateLimitError,
+  type SeasonHold,
   type SeasonValidation,
 } from '../src/index.js';
 
@@ -184,7 +185,11 @@ describe('Season organizer resource', () => {
       { status: 201, body: { sessionId: 'sbs_1', token: 'bss_secret', seasonKey: 'sea_a/b' } },
       { status: 200, body: { sessions: [] } },
       { status: 200, body: { ok: true, sessionId: 'sbs_1' } },
-      { status: 200, body: { hold: { operationId: 'sop/1', allocations: [] } } },
+      { status: 200, body: { hold: {
+        operationId: 'sop/1', seasonKey: 'sea_a/b', holdId: 'shh_1', state: 'committed',
+        bookingRef: null, expiresAt: Date.now() + 60_000, policy: 'fixed_inclusion_same_seat',
+        pricingAuthority: 'host', authoritativeAmountIncluded: false, allocations: [],
+      } } },
       { status: 202, body: pending, headers: {
         location: '/v1/seasons/sea_a%2Fb/bookings/sba_1', 'retry-after': '0',
       } },
@@ -196,6 +201,7 @@ describe('Season organizer resource', () => {
           ready: true, holdOperationId: 'sop/1', bookActionId: 'sba_1',
           cancelActionId: 'sca_1', subscriptionId: 'wh_1', occurrenceIds: ['1', '2', '3'],
           payloadSha256: ['a'.repeat(64), 'b'.repeat(64), 'c'.repeat(64)],
+          verifiedAt: 1_800_000_000_000,
         },
       } },
     ]);
@@ -206,7 +212,11 @@ describe('Season organizer resource', () => {
     });
     await sdk.seasons.listSeasonBuyerAccessSessions('sea_a/b', { limit: 10 });
     await sdk.seasons.revokeSeasonBuyerAccessSession('sea_a/b', 'sbs/1');
-    await sdk.seasons.retrieveSeasonHold('sea_a/b', 'sop/1');
+    const inspected = await sdk.seasons.retrieveSeasonHold('sea_a/b', 'sop/1');
+    expectTypeOf(inspected.hold).toEqualTypeOf<SeasonHold>();
+    expect(inspected.hold).toMatchObject({
+      pricingAuthority: 'host', authoritativeAmountIncluded: false, allocations: [],
+    });
     const accepted = await sdk.seasons.bookSeasonHold('sea_a/b', 'sop/1', {
       bookActionId: 'sba_1', bookingRef: 'order_1',
     });
@@ -218,9 +228,7 @@ describe('Season organizer resource', () => {
       cancelActionId: 'sca_1', bookingRef: 'order_1', planActivationId: 'spa_1',
       rightDisposition: 'release',
     });
-    await sdk.seasons.validateSeasonBuyerRehearsal('sea_a/b', {
-      holdOperationId: 'sop/1', bookActionId: 'sba_1', cancelActionId: 'sca_1', subscriptionId: 'wh_1',
-    });
+    await sdk.seasons.validateSeasonBuyerRehearsal('sea_a/b');
 
     expect(stub.calls.map((call) => new URL(call.url).pathname)).toEqual([
       '/v1/seasons/sea_a%2Fb/buyer-access-sessions',
@@ -232,6 +240,7 @@ describe('Season organizer resource', () => {
       '/v1/seasons/sea_a%2Fb/bookings/sba%2F1/cancel',
       '/v1/seasons/sea_a%2Fb/buyer-rehearsals/validate',
     ]);
+    expect(stub.calls[7]!.init.body).toBeUndefined();
     expect(stub.calls.every((call) =>
       !(call.init.headers as Record<string, string>)['Idempotency-Key'])).toBe(true);
     expect(stub.responses).toHaveLength(0);
