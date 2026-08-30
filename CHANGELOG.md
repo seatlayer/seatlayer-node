@@ -12,6 +12,11 @@
 - Retains typed rate-limit failures, stable request IDs, exact mutation replay
   policies, and bounded/cancellable `202` wait helpers that honor `Location`
   and `Retry-After`.
+- Makes the commerce boundary explicit on Season holds with
+  `pricingAuthority: "host"` and `authoritativeAmountIncluded: false`; allocation
+  items carry seat/Event identity only. Buyer rehearsal validation now sends no
+  evidence body because SeatLayer discovers the retained hold, booking,
+  cancellation, and delivered webhook chain automatically.
 - This candidate is retained out of band only. No package registry or
   production availability is claimed.
 

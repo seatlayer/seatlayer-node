@@ -127,10 +127,26 @@ export interface SeasonBuyerAccessReveal extends SeasonBuyerAccessSession {
   seasonKey: string;
 }
 
+export interface SeasonHoldItem {
+  label: string;
+  objectId: string;
+  objectType: string;
+  categoryKey: string;
+  tierId: string | null;
+  quantity: number;
+}
+
+export interface SeasonHoldAllocation {
+  eventKey: string;
+  labels: string[];
+  items: SeasonHoldItem[];
+}
+
 export interface SeasonHold {
   operationId: string; seasonKey: string; holdId: string; state: string; bookingRef: string | null;
   expiresAt: number; policy: 'fixed_inclusion_same_seat';
-  allocations: Array<{ eventKey: string; labels: string[]; items: Array<Record<string, unknown>> }>;
+  pricingAuthority: 'host'; authoritativeAmountIncluded: false;
+  allocations: SeasonHoldAllocation[];
 }
 
 export interface SeasonBooking {
@@ -214,7 +230,7 @@ export interface SeasonBuyerRehearsalResult {
   season: SeasonDetail;
   rehearsal: {
     ready: true; holdOperationId: string; bookActionId: string; cancelActionId: string;
-    subscriptionId: string; occurrenceIds: string[]; payloadSha256: string[];
+    subscriptionId: string; occurrenceIds: string[]; payloadSha256: string[]; verifiedAt: number;
   };
 }
 
@@ -508,10 +524,8 @@ export class Seasons {
     );
   }
 
-  validateSeasonBuyerRehearsal(seasonKey: string, params: {
-    holdOperationId: string; bookActionId: string; cancelActionId: string; subscriptionId: string;
-  }): Promise<SeasonBuyerRehearsalResult> {
-    return this.#http.post(`/v1/seasons/${pathPart(seasonKey)}/buyer-rehearsals/validate`, { body: params });
+  validateSeasonBuyerRehearsal(seasonKey: string): Promise<SeasonBuyerRehearsalResult> {
+    return this.#http.post(`/v1/seasons/${pathPart(seasonKey)}/buyer-rehearsals/validate`);
   }
 
   createSeasonHolderImport(

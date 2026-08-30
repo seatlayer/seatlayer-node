@@ -110,6 +110,8 @@ export {
   type SeasonListOptions,
   type SeasonPlan,
   type SeasonHold,
+  type SeasonHoldAllocation,
+  type SeasonHoldItem,
   type SeasonHolderImport,
   type SeasonHolderImportRow,
   type SeasonPlanPublicationResult,

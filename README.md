@@ -131,7 +131,10 @@ response is non-terminal, poll only its retained `Location` through
 
 Mint the exact-origin browser session from trusted server code, keep its `bss_`
 token in memory, and pass it to the distinct JavaScript `SeasonPicker`. Before
-charging, retrieve the Season hold and use its trusted allocation/value fields.
+charging, retrieve the Season hold and use its trusted allocation identity. It
+contains Event, seat, category, optional tier, and quantity, but no commercial
+amount: `pricingAuthority` is `"host"` and `authoritativeAmountIncluded` is
+`false`. Calculate and charge the package price in your own trusted system.
 Book and cancel with caller-stable identities; cancellation has no implicit
 future-right policy.
 
@@ -149,10 +152,17 @@ await seatlayer.seasons.cancelSeasonBooking(seasonKey, 'sba_order_1183', {
   cancelActionId: 'sca_order_1183', bookingRef: 'order_1183',
   planActivationId: session.planActivationId, rightDisposition: 'preserve',
 });
+await seatlayer.seasons.validateSeasonBuyerRehearsal(seasonKey);
 ```
 
-This surface is an unpublished validation candidate. It has not been released
-to a package registry and does not imply support in the other server SDKs.
+Rehearsal validation has no request body. SeatLayer automatically matches the
+retained hold, booking, cancellation, and successful webhook deliveries, then
+records an audit checkpoint. Do not copy internal action or subscription IDs
+into an operator form.
+
+This surface is an unpublished validation candidate. Equivalent source
+candidates now exist for every maintained server SDK, but none is a production
+support claim until its versioned artifact passes the release and pilot gates.
 
 ### Incumbent import and same-seat renewal (not in the current npm release)
 
