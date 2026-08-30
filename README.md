@@ -12,9 +12,9 @@ allocations, and webhooks through one typed ticketing API client.
 
 [`@seatlayer/server` on npm](https://www.npmjs.com/package/@seatlayer/server) ·
 [SeatLayer server SDK documentation](https://docs.seatlayer.io/server-sdk/install/) ·
-[SeatLayer reserved-seating platform](https://seatlayer.io/) ·
+[SeatLayer SDK and API overview](https://seatlayer.io/developers/) ·
 [SeatLayer JavaScript seat map SDK](https://www.npmjs.com/package/@seatlayer/js) ·
-[Server API reference](https://docs.seatlayer.io/server-api/)
+[Server API reference](https://docs.seatlayer.io/server-api/events/)
 
 > **Server-side only.** This package authenticates with your secret key. Never bundle it into a
 > browser, a mobile app, or anything a ticket buyer can open. Browser surfaces get short-lived,
@@ -84,7 +84,7 @@ versioned support export. Webhook delivery is counted only after a receiver
 returns 2xx; a replay request or queue enqueue is not reported as delivered.
 Operational feeds are deliberately bounded and report `truncated`; use exact
 resource reads for retained records. Only the top-level Season catalogue is
-cursor-paginated in this private-beta contract.
+cursor-paginated in this release-gated contract.
 
 Use a test key and test Events to validate the complete fixed Plan before
 creating anything. Validation is read-only and returns exact incompatibility
@@ -127,7 +127,7 @@ keeps sales closed. Lifecycle calls are single-attempt domain operations. If a
 response is non-terminal, poll only its retained `Location` through
 `waitForSeasonLifecycle`; do not invent a new action.
 
-### Season buyer integration (private-beta candidate)
+### Season buyer integration (not in the current npm release)
 
 Mint the exact-origin browser session from trusted server code, keep its `bss_`
 token in memory, and pass it to the distinct JavaScript `SeasonPicker`. Before
@@ -154,7 +154,7 @@ await seatlayer.seasons.cancelSeasonBooking(seasonKey, 'sba_order_1183', {
 This surface is an unpublished validation candidate. It has not been released
 to a package registry and does not imply support in the other server SDKs.
 
-### Incumbent import and same-seat renewal (private-beta candidate)
+### Incumbent import and same-seat renewal (not in the current npm release)
 
 Dry-run the exact prior Contract/Plan/seat-set mapping before committing it.
 Every row carries a caller-stable row id, opaque holder and prior Contract
@@ -174,14 +174,14 @@ const importInput = {
   }],
 };
 
-const dryRun = await seatlayer.seasons.importSeasonHolders(
+const dryRun = await seatlayer.seasons.createSeasonHolderImport(
   seasonKey,
   { ...importInput, dryRun: true },
   { idempotencyKey: 'incumbents-2027-dry-run' },
 );
 if (dryRun.import.rejectedCount) throw new Error(JSON.stringify(dryRun.import.rows));
 
-await seatlayer.seasons.importSeasonHolders(
+await seatlayer.seasons.createSeasonHolderImport(
   seasonKey,
   importInput,
   { idempotencyKey: 'incumbents-2027-commit' },
@@ -461,7 +461,7 @@ await seatlayer.request('POST', '/v1/events/ev_1/some-new-route', { body: { … 
 | `webhooks` | `list` `create` `update` `delete` `listDeliveries` |
 | `workspaces` | `list` `create` `retrieve` `update` |
 
-Full reference: [docs.seatlayer.io/server-api](https://docs.seatlayer.io/server-api/)
+Full reference: [SeatLayer Server API](https://docs.seatlayer.io/server-api/events/)
 
 ## Frequently asked questions
 

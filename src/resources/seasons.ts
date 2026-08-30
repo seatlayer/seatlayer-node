@@ -514,7 +514,7 @@ export class Seasons {
     return this.#http.post(`/v1/seasons/${pathPart(seasonKey)}/buyer-rehearsals/validate`, { body: params });
   }
 
-  importSeasonHolders(
+  createSeasonHolderImport(
     seasonKey: string,
     params: { successorPlanActivationId: string; dryRun?: boolean; rows: SeasonHolderImportRow[] },
     options: { idempotencyKey?: string; signal?: AbortSignal } = {},
@@ -522,6 +522,15 @@ export class Seasons {
     return this.#http.postWithHeaderReplay(`/v1/seasons/${pathPart(seasonKey)}/imports`, {
       body: params, idempotencyKey: options.idempotencyKey, signal: options.signal,
     });
+  }
+
+  /** @deprecated Use createSeasonHolderImport, which matches the public operation id. */
+  importSeasonHolders(
+    seasonKey: string,
+    params: { successorPlanActivationId: string; dryRun?: boolean; rows: SeasonHolderImportRow[] },
+    options: { idempotencyKey?: string; signal?: AbortSignal } = {},
+  ): Promise<{ import: SeasonHolderImport }> {
+    return this.createSeasonHolderImport(seasonKey, params, options);
   }
 
   retrieveSeasonHolderImport(seasonKey: string, importId: string): Promise<{ import: SeasonHolderImport }> {

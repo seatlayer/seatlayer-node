@@ -3,7 +3,7 @@
   "version": "0.7.0-season-s07.0",
   "description": "Official Node.js server SDK for SeatLayer inventory, Seasons, holds, booking references, allocations, and reports. Secret-key only.",
   "license": "MIT",
-  "homepage": "https://seatlayer.io/",
+  "homepage": "https://docs.seatlayer.io/server-sdk/install/",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/seatlayer/seatlayer-node.git"

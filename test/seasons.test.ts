@@ -284,7 +284,7 @@ describe('Season organizer resource', () => {
     ]);
     const sdk = new SeatLayer({ secretKey: 'sk_test_abc', fetch: stub.fetch, maxRetries: 3 });
 
-    await sdk.seasons.importSeasonHolders('sea_a/b', {
+    await sdk.seasons.createSeasonHolderImport('sea_a/b', {
       successorPlanActivationId: 'spa_1', rows: imported.import.rows,
     }, { idempotencyKey: 'import-1' });
     await sdk.seasons.retrieveSeasonHolderImport('sea_a/b', 'shi_a/b');
@@ -325,6 +325,19 @@ describe('Season organizer resource', () => {
       expect(headers[index]!['Idempotency-Key']).toBeUndefined();
     }
     expect(stub.responses).toHaveLength(0);
+  });
+
+  it('keeps the pre-freeze importSeasonHolders alias source-compatible', async () => {
+    const stub = stubFetch([{ status: 201, body: { import: { importId: 'shi_1' } } }]);
+    const sdk = new SeatLayer({ secretKey: 'sk_test_abc', fetch: stub.fetch });
+
+    await sdk.seasons.importSeasonHolders('sea_1', {
+      successorPlanActivationId: 'spa_1', rows: [],
+    }, { idempotencyKey: 'legacy-import-1' });
+
+    expect(new URL(stub.calls[0]!.url).pathname).toBe('/v1/seasons/sea_1/imports');
+    expect((stub.calls[0]!.init.headers as Record<string, string>)['Idempotency-Key'])
+      .toBe('legacy-import-1');
   });
 
   it('maps S06 amendments, operations, support, replay, audit, and export without widening retry authority', async () => {
