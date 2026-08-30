@@ -71,20 +71,18 @@ if (process.env.NODE_ENV === 'production' && seatlayer.mode !== 'live') {
 }
 ```
 
-## Fixed Renewable Seasons (unpublished candidate)
+## Fixed Renewable Seasons
 
-The `0.7.0-season-s07.0` source candidate adds the trusted organizer-side
-`seatlayer.seasons` resource. It has not been published to npm. Do not infer
-registry availability from this repository checkout.
+Version `0.7.0` adds the trusted organizer-side `seatlayer.seasons` resource.
 
-S06 adds identity-preserving reschedules, explicit replacement/cancellation
+The resource includes identity-preserving reschedules, explicit replacement/cancellation
 exceptions with immutable amendment revisions, allocation/report health,
 missed-event replay, booking/holder support lookup, redacted audit, and a bounded
 versioned support export. Webhook delivery is counted only after a receiver
 returns 2xx; a replay request or queue enqueue is not reported as delivered.
 Operational feeds are deliberately bounded and report `truncated`; use exact
 resource reads for retained records. Only the top-level Season catalogue is
-cursor-paginated in this release-gated contract.
+cursor-paginated in the `0.7.0` contract.
 
 Use a test key and test Events to validate the complete fixed Plan before
 creating anything. Validation is read-only and returns exact incompatibility
@@ -127,7 +125,7 @@ keeps sales closed. Lifecycle calls are single-attempt domain operations. If a
 response is non-terminal, poll only its retained `Location` through
 `waitForSeasonLifecycle`; do not invent a new action.
 
-### Season buyer integration (not in the current npm release)
+### Season buyer integration
 
 Mint the exact-origin browser session from trusted server code, keep its `bss_`
 token in memory, and pass it to the distinct JavaScript `SeasonPicker`. Before
@@ -160,11 +158,11 @@ retained hold, booking, cancellation, and successful webhook deliveries, then
 records an audit checkpoint. Do not copy internal action or subscription IDs
 into an operator form.
 
-This surface is an unpublished validation candidate. Equivalent source
-candidates now exist for every maintained server SDK, but none is a production
-support claim until its versioned artifact passes the release and pilot gates.
+Version `0.7.0` includes this retained-evidence validation path. A successful
+validation opens inventory sales only; your platform remains responsible for
+price, payment, orders, tax, refunds, tickets, and passes.
 
-### Incumbent import and same-seat renewal (not in the current npm release)
+### Incumbent import and same-seat renewal
 
 Dry-run the exact prior Contract/Plan/seat-set mapping before committing it.
 Every row carries a caller-stable row id, opaque holder and prior Contract
