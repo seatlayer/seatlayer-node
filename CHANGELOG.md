@@ -1,10 +1,10 @@
 # Changelog
 
-## 0.7.0-season-s07.0 — unpublished candidate
+## 0.7.0 — 2026-08-30
 
-- Freezes the private-beta support lane for every Season operation through S06:
-  REST and Node source/candidate coverage are verified, while publication and
-  production availability remain unverified.
+- Adds all 48 Fixed Renewable Season operations across catalogue, lifecycle,
+  Plans and sales, trusted buyer handoff, renewals, amendments, recovery,
+  outbox, audit, and support.
 - Types bounded operational feeds explicitly: renewal offers and amendments
   return the latest 100, operations the latest 50, and outbox the latest 100;
   each response reports `truncated`. The top-level Season catalogue retains its
@@ -17,8 +17,6 @@
   items carry seat/Event identity only. Buyer rehearsal validation now sends no
   evidence body because SeatLayer discovers the retained hold, booking,
   cancellation, and delivered webhook chain automatically.
-- This candidate is retained out of band only. No package registry or
-  production availability is claimed.
 
 ## 0.7.0-season-s06.0 — unpublished candidate
 
