@@ -5,13 +5,13 @@
 [![Node.js](https://img.shields.io/node/v/@seatlayer/server.svg)](https://www.npmjs.com/package/@seatlayer/server)
 [![License: MIT](https://img.shields.io/badge/license-MIT-111827.svg)](LICENSE)
 
-The official SeatLayer Node.js server SDK — the trusted side of a reserved-seating
-integration. Inspect what a hold really contains, price from server-owned seating-chart
-data, and book with a stable `bookingRef`, while managing charts, events, inventory,
-allocations, and webhooks through one typed ticketing API client.
+SeatLayer's official Node.js server SDK is the trusted side of its reserved seating and seat
+booking API. Inspect what a hold really contains, price from server-owned seating-chart data,
+and book with a stable `bookingRef`, while managing charts, events, inventory, allocations, and
+webhooks through one typed ticketing API client.
 
 [`@seatlayer/server` on npm](https://www.npmjs.com/package/@seatlayer/server) ·
-[SeatLayer server SDK documentation](https://docs.seatlayer.io/server-sdk/install/) ·
+[Node.js server SDK guide](https://docs.seatlayer.io/server-sdk/node/) ·
 [SeatLayer SDK and API overview](https://seatlayer.io/developers/) ·
 [SeatLayer JavaScript seat map SDK](https://www.npmjs.com/package/@seatlayer/js) ·
 [Server API reference](https://docs.seatlayer.io/server-api/events/)
@@ -26,7 +26,7 @@ Your platform owns its event catalogue, buyer accounts, payments, commercial Ord
 email/PDF delivery, refunds, scanning, and customer support. No booking method in this package
 accepts buyer, payment, ticket, email, or refund data.
 
-## Install
+## Install the Node.js seat booking SDK
 
 ```bash
 npm install @seatlayer/server
@@ -42,7 +42,8 @@ import { SeatLayer } from '@seatlayer/server';
 const seatlayer = new SeatLayer(process.env.SEATLAYER_SECRET_KEY!);
 
 // 1. Materialize a published catalog template as the organiser's draft chart.
-const { meta: chart } = await seatlayer.templates.instantiateTemplate('arena');
+// Replace this placeholder with a template id from your catalog.
+const { meta: chart } = await seatlayer.templates.instantiateTemplate('your-published-template');
 await seatlayer.charts.publish(chart.id);
 
 // 2. Create an event on it.
@@ -70,6 +71,69 @@ if (process.env.NODE_ENV === 'production' && seatlayer.mode !== 'live') {
   throw new Error('Refusing to boot production against test-mode seating data.');
 }
 ```
+
+## Book reserved seats from Node.js
+
+**Buyer picks seats in the browser.** Your frontend holds them; your backend confirms the price and
+books. Never price from what the browser sent you — `retrieveHold` is the authoritative answer.
+
+```ts
+const hold = await seatlayer.inventory.retrieveHold(eventKey, holdId);
+if (!hold.items.length) throw new Error('Hold has no items.');
+const currency = hold.items[0]!.currency;
+if (!hold.items.every((item) => item.currency === currency)) {
+  throw new Error('A hold must use one currency.');
+}
+const total = hold.items.reduce((sum, item) => sum + item.unitPrice * (item.quantity ?? 1), 0);
+// … charge `total` in `currency` …
+await seatlayer.inventory.book(eventKey, { holdId, bookingRef: charge.id });
+```
+
+**Your backend picks the seats.** Phone orders, box office, comps. No browser involved.
+
+```ts
+// Payment already taken — book outright, so nothing is stranded if a second call fails.
+await seatlayer.inventory.bookBestAvailable(eventKey, { qty: 2, bookingRef: 'phone-1183' });
+
+// Or name the seats yourself.
+await seatlayer.inventory.book(eventKey, { labels: ['A-1', 'A-2'], bookingRef: 'comp-14' });
+```
+
+`bookingRef` is your stable join between SeatLayer inventory and your own commercial order. The SDK
+trims it, refuses an empty value before making a request, and echoes the normalized reference in
+booking and cancellation results. It is not a SeatLayer Order id.
+
+## Booking History
+
+Booking History is the inventory ledger, not a commerce or fulfilment record. It contains labels,
+category/section/channel attribution, quantities, configured-value snapshots, and lifecycle events.
+It never contains buyer, payment, ticket, email, refund, or Door fields.
+
+```ts
+const page = await seatlayer.inventory.listBookings(eventKey, {
+  q: 'A-12',
+  state: 'booked',
+  limit: 50,
+});
+
+const detail = await seatlayer.inventory.retrieveBooking(
+  eventKey,
+  page.bookings[0].bookingRef,
+);
+```
+
+To release booked inventory, first update the commercial/refund state in your own system as your
+workflow requires, then cancel with the same reference that booked it:
+
+```ts
+await seatlayer.inventory.unbook(eventKey, {
+  labels: ['A-12'],
+  bookingRef: 'order-8842',
+});
+```
+
+SeatLayer releases inventory and records the lifecycle entry; it does not move or refund money,
+void a platform-owned ticket, send an email/PDF, or update a platform-owned scanner.
 
 ## Fixed Renewable Seasons
 
@@ -218,65 +282,6 @@ Renewal intent requires a browser session bound to the exact `buyerRef`/holder.
 Extension is explicit and pre-lapse; no default extension is invented while
 organizer bounds and permission policy remain an owner-open rollout decision.
 
-## The two selling flows
-
-**Buyer picks seats in the browser.** Your frontend holds them; your backend confirms the price and
-books. Never price from what the browser sent you — `retrieveHold` is the authoritative answer.
-
-```ts
-const hold = await seatlayer.inventory.retrieveHold(eventKey, holdId);
-const total = hold.items.reduce((sum, item) => sum + item.unitPrice * (item.quantity ?? 1), 0);
-const currency = hold.items[0]?.currency;
-// … charge `total` in `currency` …
-await seatlayer.inventory.book(eventKey, { holdId, bookingRef: charge.id });
-```
-
-**Your backend picks the seats.** Phone orders, box office, comps. No browser involved.
-
-```ts
-// Payment already taken — book outright, so nothing is stranded if a second call fails.
-await seatlayer.inventory.bookBestAvailable(eventKey, { qty: 2, bookingRef: 'phone-1183' });
-
-// Or name the seats yourself.
-await seatlayer.inventory.book(eventKey, { labels: ['A-1', 'A-2'], bookingRef: 'comp-14' });
-```
-
-`bookingRef` is your stable join between SeatLayer inventory and your own commercial order. The SDK
-trims it, refuses an empty value before making a request, and echoes the normalized reference in
-booking and cancellation results. It is not a SeatLayer Order id.
-
-## Booking History
-
-Booking History is the inventory ledger, not a commerce or fulfilment record. It contains labels,
-category/section/channel attribution, quantities, configured-value snapshots, and lifecycle events.
-It never contains buyer, payment, ticket, email, refund, or Door fields.
-
-```ts
-const page = await seatlayer.inventory.listBookings(eventKey, {
-  q: 'A-12',
-  state: 'booked',
-  limit: 50,
-});
-
-const detail = await seatlayer.inventory.retrieveBooking(
-  eventKey,
-  page.bookings[0].bookingRef,
-);
-```
-
-To release booked inventory, first update the commercial/refund state in your own system as your
-workflow requires, then cancel with the same reference that booked it:
-
-```ts
-await seatlayer.inventory.unbook(eventKey, {
-  labels: ['A-12'],
-  bookingRef: 'order-8842',
-});
-```
-
-SeatLayer releases inventory and records the lifecycle entry; it does not move or refund money,
-void a platform-owned ticket, send an email/PDF, or update a platform-owned scanner.
-
 ## Private allocations
 
 `seatlayer.channels` manages event allocations and mints short-lived buyer access for a browser.
@@ -354,8 +359,10 @@ const session = await seatlayer.sessions.createManageSession(eventKey, {
 
 The raw API safely defaults an omitted list to view-only (`event:view`). The SDK deliberately
 requires an explicit non-empty `capabilities` list so the browser authority is visible during code
-review. Grant only what the page needs across viewing, blocking, cancellation, reports, channels,
-orders, refunds, fulfilment, door, and box-office work.
+review. Grant only what the page needs. Viewing, blocking, cancellation, reports, and channels are
+Platform/SDK inventory work. `event:cancel` returns a Platform booking's inventory to sale but does
+not move gateway money. Eligible Managed Ticketing refunds use the separate `event:refund`
+capability.
 
 The same pattern embeds the Designer in your own UI:
 
@@ -430,10 +437,14 @@ requests.
 
 ## Reliability
 
-**Retries and idempotency.** Reads retry 408, 429 and 5xx responses with backoff. Only chart create,
-chart copy, template instantiation, event create and workspace create opt into mutation retries: the SDK generates one
-`Idempotency-Key` and reuses it for every attempt. All other mutations are single-attempt, even if
-you supply a key.
+**Retries and idempotency.** Reads retry 408, 429 and 5xx responses with backoff. Fourteen
+mutations use exact header replay: `charts.create`, `charts.copy`, `templates.instantiateTemplate`,
+`events.create`, `workspaces.create`, `performanceGroups.createPerformanceGroup`,
+`seasons.createSeason`, `seasons.updateSeason`, `seasons.deleteSeason`, `seasons.createSeasonPlan`,
+`seasons.duplicateSeasonToLive`, `seasons.createSeasonHolderImport`,
+`seasons.createSeasonRenewalOffers`, and `seasons.createSeasonAmendment`. The SDK generates one
+`Idempotency-Key` and reuses it for every attempt. All remaining SDK mutations are sent once; some
+have a server-side domain idempotency contract, but the SDK does not retry them automatically.
 
 **Booking safety.** Direct and box-office bookings have the server's exact-selection plus
 `bookingRef` safeguard, but the SDK still sends them once. Holds, best-available operations,
@@ -443,7 +454,7 @@ before trying again.
 ```ts
 new SeatLayer({
   secretKey: process.env.SEATLAYER_SECRET_KEY!,
-  maxRetries: 3,      // attempts for reads and the four replay-safe creates
+  maxRetries: 3,      // retries for reads and the 14 exact-header-replay mutations
   timeoutMs: 30_000,  // per attempt
 });
 ```
@@ -459,15 +470,22 @@ await seatlayer.request('POST', '/v1/events/ev_1/some-new-route', { body: { … 
 
 ## API surface
 
+The client exposes these resources. Performance Groups cover runs, sessions, holds, and bookings;
+Seasons cover catalogue, plan, sales, buyer-session, booking, renewal, occurrence, reporting,
+outbox, and support operations.
+
 | Resource | Methods |
 | --- | --- |
 | `charts` | `list` `listAll` `create` `retrieve` `update` `delete` `copy` `archive` `unarchive` `publish` |
+| `templates` | `instantiateTemplate` |
 | `events` | `list` `listAll` `create` `retrieve` `retrieveConfigurationBinding` `updateConfigurationBinding` `update` `delete` `updatePoster` `deletePoster` `updateChart` `close` `reopen` `archive` `retrieveHoldTtl` `updateHoldTtl` `listTicketReleases` `updateTicketReleases` `closeTicketRelease` `retrieveReport` `retrieveLog` |
 | `inventory` | `hold` `holdBestAvailable` `bookBestAvailable` `extendHold` `retrieveHold` `release` `book` `boxOfficeBook` `unbook` `block` `unblock` `unblockAll` `retrieveAvailability` `updateAvailability` `listBookings` `retrieveBooking` `listInventoryBookings` `retrieveInventoryBooking` |
 | `channels` | `listChannels` `createChannel` `updateChannel` `updateChannelAssignments` `listChannelAllocation` `retrieveChannelAccessPreview` `pauseChannel` `unpauseChannel` `archiveChannel` `retrieveChannelReport` `createBuyerAccessSession` `listBuyerAccessSessions` `revokeBuyerAccessSession` `createAccessLink` `listAccessLinks` `rotateAccessLink` `revokeAccessLink` |
 | `sessions` | `createManageSession` `revokeManageSession` `createDesignerSession` `revokeDesignerSession` |
 | `webhooks` | `list` `create` `update` `delete` `listDeliveries` |
 | `workspaces` | `list` `create` `retrieve` `update` |
+| `performanceGroups` | `listPerformanceGroups` `createPerformanceGroup` `retrievePerformanceGroup` `deletePerformanceGroup` `activatePerformanceGroup` `closePerformanceGroup` `retrievePerformanceGroupLifecycle` `createPerformanceGroupBuyerAccessSession` `listPerformanceGroupBuyerAccessSessions` `revokePerformanceGroupBuyerAccessSession` `retrievePerformanceGroupHold` `bookPerformanceGroupHold` `retrievePerformanceGroupBooking` |
+| `seasons` | 48 organizer operations for catalogue and Plan lifecycle, sales windows, buyer access and booking, holder imports, renewals, occurrence amendments, reports, audit, outbox, and support export, plus polling helpers |
 
 Full reference: [SeatLayer Server API](https://docs.seatlayer.io/server-api/events/)
 
@@ -504,16 +522,16 @@ outcome before trying again.
 
 ### Can I use my own payment provider?
 
-Yes. SeatLayer never processes payment. Inspect the hold, compute the charge from
-the returned `items` and their authoritative `unitPrice` and `currency`, take the
-money through whichever provider you already use — Stripe, Adyen, Razorpay, or your
-own — and then book the hold with your order id as `bookingRef`. SeatLayer owns
-seating state, holds, booking concurrency, and the inventory ledger; your platform
-owns payments, commercial orders, tickets, delivery, and refunds.
+Yes. This server SDK does not process payment in a Platform/SDK integration. Inspect the hold,
+compute the charge from each returned item's authoritative `unitPrice`, `quantity`, and `currency`,
+take the money through whichever provider you already use, and then book the hold with your order
+id as `bookingRef`. SeatLayer owns seating state, holds, booking concurrency, and the inventory
+ledger in this integration; your platform owns payments, commercial orders, tickets, delivery,
+and refunds. Managed Ticketing is a separate product path with organizer-connected payments.
 
 ## Continue your Node.js integration
 
-- [Follow the SeatLayer server SDK guide](https://docs.seatlayer.io/server-sdk/install/)
+- [Follow the Node.js server SDK guide](https://docs.seatlayer.io/server-sdk/node/)
   for installation, authentication, and the full hold-to-booking flow.
 - [Handle errors, retries, and safe booking repeats](https://docs.seatlayer.io/server-sdk/reliability/)
   before connecting a production order flow.
