@@ -11,6 +11,7 @@ import type {
   EventReportEnvelope,
   EventSectionState,
   KeyMode,
+  EventHostingRegion,
   SalesAliasResult,
   TicketReleaseList,
   TicketReleaseReplaceInput,
@@ -121,6 +122,8 @@ export class Events {
     posterAssetId?: string | null;
     /** A secret-key client is always pinned to its own mode. */
     mode?: KeyMode;
+    /** Live-inventory region nearest the venue. Defaults to Western Europe. */
+    region?: EventHostingRegion;
   }, options: { idempotencyKey?: string } = {}): Promise<EventEnvelope> {
     return this.#http.postWithHeaderReplay('/v1/events', {
       body: params,

@@ -1130,6 +1130,7 @@ describe('event request contracts', () => {
       locale: 'en-IN',
       posterAssetId: '0123456789abcdef.jpg',
       mode: 'test',
+      region: 'asia-pacific',
     });
     await sdk.events.updateChart('festival-2026', {
       acknowledgeDroppedAssignments: true,
@@ -1145,6 +1146,7 @@ describe('event request contracts', () => {
       externalRef: null,
       currency: null,
       mode: 'test',
+      region: 'asia-pacific',
     });
     expect(JSON.parse(call(1).body)).toEqual({
       acknowledgeDroppedAssignments: true,

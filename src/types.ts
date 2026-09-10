@@ -70,6 +70,8 @@ export interface EventMeta {
   endsAt: number | null;
   timezone: string | null;
   locale: string | null;
+  /** Creation-time Event inventory region; null on legacy Events. */
+  region: EventHostingRegion | null;
   posterPath: string | null;
   [key: string]: unknown;
 }
@@ -508,7 +510,14 @@ export interface Workspace {
   status: 'active' | 'disabled';
   isDefault: boolean;
   externalRef?: string | null;
+  defaultRegion: EventHostingRegion;
 }
+
+export type EventHostingRegion =
+  | 'western-europe' | 'eastern-europe'
+  | 'north-america-east' | 'north-america-west'
+  | 'south-america' | 'asia-pacific' | 'northeast-asia'
+  | 'southeast-asia' | 'oceania' | 'africa' | 'middle-east';
 
 export type WebhookEventName =
   | 'seat.booked'
