@@ -1,5 +1,5 @@
 import type { HttpClient } from '../http.js';
-import type { Workspace } from '../types.js';
+import type { EventHostingRegion, Workspace } from '../types.js';
 
 /**
  * Workspaces isolate one tenant's charts and events from another's. A platform
@@ -16,7 +16,7 @@ export class Workspaces {
     return this.#http.get('/v1/workspaces');
   }
 
-  create(params: { name: string; externalRef?: string }, options: { idempotencyKey?: string } = {}): Promise<{ workspace: Workspace }> {
+  create(params: { name: string; externalRef?: string; defaultRegion?: EventHostingRegion }, options: { idempotencyKey?: string } = {}): Promise<{ workspace: Workspace }> {
     return this.#http.postWithHeaderReplay('/v1/workspaces', {
       body: params,
       idempotencyKey: options.idempotencyKey,
@@ -38,6 +38,7 @@ export class Workspaces {
     externalRef: string | null;
     status: 'active' | 'disabled';
     isDefault: true;
+    defaultRegion: EventHostingRegion;
   }>): Promise<{ workspace: Workspace }> {
     return this.#http.patch(`/v1/workspaces/${encodeURIComponent(workspaceId)}`, { body: params });
   }

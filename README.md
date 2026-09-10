@@ -51,6 +51,8 @@ const { meta: event } = await seatlayer.events.create({
   chartId: chart.id,
   name: 'Spring Gala',
   startsAt: Date.parse('2026-09-12T19:30:00Z'),
+  currency: 'EUR', // omit to inherit the workspace currency
+  region: 'western-europe', // nearest to the event venue; India uses 'asia-pacific'
 });
 
 // 3. Sell four seats over the phone.
@@ -58,6 +60,20 @@ const held = await seatlayer.inventory.holdBestAvailable(event.key, { qty: 4 });
 // … take payment against held.items, which carry authoritative prices …
 await seatlayer.inventory.book(event.key, { holdId: held.holdId, bookingRef: 'order-8842' });
 ```
+
+## Event hosting region
+
+Pass `region` to `events.create` based on the **event venue**, not your API server or office.
+It controls the initial placement of the Event's live inventory; an existing Event
+cannot be moved later. Omit it to inherit the workspace default (`western-europe` for new accounts).
+Set that default with `workspaces.create({ name, defaultRegion })` or
+`workspaces.update(workspaceId, { defaultRegion })`; changing it affects only future Events.
+
+- `western-europe`, `eastern-europe`, `north-america-east`, `north-america-west`, `south-america`
+- `asia-pacific`, `northeast-asia`, `southeast-asia`, `oceania`, `africa`, `middle-east`
+
+The hint is best effort, not a data-residency guarantee. See the
+[full Event region guide](https://docs.seatlayer.io/server-api/event-regions/).
 
 ## Test vs live
 
