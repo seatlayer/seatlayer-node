@@ -5,6 +5,8 @@
 [![Node.js](https://img.shields.io/node/v/@seatlayer/server.svg)](https://www.npmjs.com/package/@seatlayer/server)
 [![License: MIT](https://img.shields.io/badge/license-MIT-111827.svg)](LICENSE)
 
+SeatLayer is interactive seating chart software built for stadium scale. Platforms embed the white-label seat picker with their own checkout; organizers sell seated events on their own website with their own payment gateway.
+
 SeatLayer's official Node.js server SDK is the trusted side of its reserved seating and seat
 booking API. Inspect what a hold really contains, price from server-owned seating-chart data,
 and book with a stable `bookingRef`, while managing charts, events, inventory, allocations, and
@@ -18,7 +20,7 @@ webhooks through one typed ticketing API client.
 
 > **Server-side only.** This package authenticates with your secret key. Never bundle it into a
 > browser, a mobile app, or anything a ticket buyer can open. Browser surfaces get short-lived,
-> origin-bound tokens that you mint here — see [Embedding the control room](#embedding-the-control-room).
+> origin-bound tokens that you mint here. See [Embedding the control room](#embedding-the-control-room).
 
 This SDK is the **Platform inventory** product. SeatLayer owns seating state, configured prices,
 holds, booking concurrency, the inventory ledger, allocation reporting, and inventory webhooks.
@@ -26,9 +28,13 @@ Your platform owns its event catalogue, buyer accounts, payments, commercial Ord
 email/PDF delivery, refunds, scanning, and customer support. No booking method in this package
 accepts buyer, payment, ticket, email, or refund data.
 
+Two-step shape: the buyer picks and holds seats in the client with your public key, then this SDK confirms the booking from your server with your secret key while your platform keeps checkout and its own payment provider.
+
+**Start here:** [Quickstart](https://docs.seatlayer.io/start/quickstart/) · [Holds and checkout](https://docs.seatlayer.io/buyer-sdk/holds-and-checkout/) · [Node.js server SDK guide](https://docs.seatlayer.io/server-sdk/node/) · [SDK catalog](https://docs.seatlayer.io/sdk-catalog.json) · [Pricing](https://seatlayer.io/pricing/): $0 entry, 100 free confirmed-sold-seat credits per organization each month, then $0.10 down to $0.05 a credit, and credits never expire.
+
 ## Scale evidence
 
-SeatLayer is benchmarked on public 100,000-, 150,000- and 200,000-seat venue fixtures: 200,000 seats chart-ready in 1.95 s with 58 FPS zoom and 60 FPS pan in a desktop benchmark (15 September 2026). Fixtures, method, all runs and SHA-256 manifests: https://github.com/seatlayer/seatlayer-performance · Try the 53,018-seat live demo: https://app.seatlayer.io/demo/play/large-stadium
+Benchmarked on public 100,000-, 150,000- and 200,000-seat venue fixtures on 15 September 2026: 200,000 seats chart-ready in 1.95 s, desktop, local production build. Fixtures, method and run logs: https://github.com/seatlayer/seatlayer-performance. Live 200,000-seat stadium demo: https://app.seatlayer.io/demo/play/century-stadium-200k. This is renderer evidence, not a concurrent-buyer claim.
 
 ## Install the Node.js seat booking SDK
 
@@ -526,7 +532,7 @@ The buyer SDK runs where the ticket buyer is: it renders the interactive seating
 chart, handles seat selection, and creates temporary holds. This server SDK is the
 trusted side. It authenticates with your secret key, inspects what a hold actually
 contains, prices from server-owned data, and books. Never bundle the secret key
-into a browser or a mobile app — browser surfaces get short-lived, origin-bound
+into a browser or a mobile app. Browser surfaces get short-lived, origin-bound
 tokens that you mint here.
 
 ### How do temporary holds work server-side?
