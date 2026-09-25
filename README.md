@@ -5,7 +5,7 @@
 [![Node.js](https://img.shields.io/node/v/@seatlayer/server.svg)](https://www.npmjs.com/package/@seatlayer/server)
 [![License: MIT](https://img.shields.io/badge/license-MIT-111827.svg)](LICENSE)
 
-SeatLayer is interactive seating chart software built for stadium scale. Platforms embed the white-label seat picker with their own checkout; organizers sell seated events on their own website with their own payment gateway.
+The official Node.js client for the SeatLayer API. `@seatlayer/server` lets a Node.js or TypeScript backend inspect seat holds, price orders from server data, book reserved seats and verify webhooks, with no runtime dependencies. SeatLayer is seating chart and reserved-seat ticketing software built for venues up to stadium scale.
 
 SeatLayer's official Node.js server SDK is the trusted side of its reserved seating and seat
 booking API. Inspect what a hold really contains, price from server-owned seating-chart data,
@@ -101,7 +101,7 @@ if (process.env.NODE_ENV === 'production' && seatlayer.mode !== 'live') {
 ## Book reserved seats from Node.js
 
 **Buyer picks seats in the browser.** Your frontend holds them; your backend confirms the price and
-books. Never price from what the browser sent you — `retrieveHold` is the authoritative answer.
+books. Never price from what the browser sent you: `retrieveHold` is the authoritative answer.
 
 ```ts
 const hold = await seatlayer.inventory.retrieveHold(eventKey, holdId);
@@ -118,7 +118,7 @@ await seatlayer.inventory.book(eventKey, { holdId, bookingRef: charge.id });
 **Your backend picks the seats.** Phone orders, box office, comps. No browser involved.
 
 ```ts
-// Payment already taken — book outright, so nothing is stranded if a second call fails.
+// Payment already taken: book outright, so nothing is stranded if a second call fails.
 await seatlayer.inventory.bookBestAvailable(eventKey, { qty: 2, bookingRef: 'phone-1183' });
 
 // Or name the seats yourself.
@@ -333,7 +333,7 @@ deprecated response aliases for compatibility.
 ## Listing and pagination
 
 `list()` returns one page plus a `nextCursor`. When you want everything, `listAll()` pages for you
-and yields as it goes — an async iterator rather than an array, because the point of paginating is
+and yields as it goes. It is an async iterator rather than an array, because the point of paginating is
 to *not* hold an unbounded list in memory.
 
 ```ts
@@ -349,8 +349,8 @@ for await (const event of seatlayer.events.listAll()) {
 ```
 
 Listing events includes live availability `counts` by default, which costs the server one
-round-trip **per event**. `listAll()` turns them off automatically — walking a whole catalogue is
-exactly when you don't want that — and you can control it explicitly:
+round-trip **per event**. `listAll()` turns them off automatically, since walking a whole catalogue is
+exactly when you don't want that, and you can control it explicitly:
 
 ```ts
 await seatlayer.events.list({ limit: 50, counts: false });
@@ -358,7 +358,7 @@ await seatlayer.events.list({ limit: 50, counts: false });
 
 ## Keeping a hold alive
 
-When an order takes longer than the checkout window — an invoice, a phone sale — extend rather than
+When an order takes longer than the checkout window (an invoice, a phone sale), extend rather than
 release and re-hold. Releasing first hands the seats to whoever is racing for them in between.
 
 ```ts
@@ -366,7 +366,7 @@ try {
   await seatlayer.inventory.extendHold(eventKey, { holdId, ttlMs: 10 * 60_000 });
 } catch (error) {
   if (error instanceof SeatLayerConflictError) {
-    // Gone, expired, or at its renewal cap — the buyer has to re-pick.
+    // Gone, expired, or at its renewal cap: the buyer has to re-pick.
   }
 }
 ```
@@ -421,7 +421,7 @@ app.post('/webhooks/seatlayer', express.raw({ type: 'application/json' }), (req,
 
     // The signed body carries `at`, but nothing enforces a freshness window,
     // so a captured delivery stays valid indefinitely. Deduplicate on
-    // occurrenceId — this is your replay protection, not an optimisation.
+    // occurrenceId: this is your replay protection, not an optimisation.
     if (await alreadyProcessed(event.occurrenceId)) return res.sendStatus(200);
 
     await handle(event);
@@ -458,7 +458,7 @@ try {
 }
 ```
 
-Every error carries `status`, `code`, `body`, and `requestId` — quote the request id in support
+Every error carries `status`, `code`, `body`, and `requestId`. Quote the request id in support
 requests.
 
 ## Reliability
@@ -519,8 +519,8 @@ Full reference: [SeatLayer Server API](https://docs.seatlayer.io/server-api/even
 
 ### How do I book seats from Node.js?
 
-Create a client with your secret key, obtain a hold id — either from the buyer's
-browser session or by holding server-side — and call `inventory.book(eventKey, { holdId, bookingRef })`.
+Create a client with your secret key, obtain a hold id (either from the buyer's
+browser session or by holding server-side) and call `inventory.book(eventKey, { holdId, bookingRef })`.
 `bookingRef` is your own stable order id and is the join between SeatLayer
 inventory and your commercial order, so the same reference identifies the booking
 in Booking History and when you later cancel it. For phone orders, box office, and
@@ -543,7 +543,7 @@ and at what price, so charge from its `items` rather than from anything the brow
 sent you. When an order runs longer than the checkout window, `inventory.extendHold`
 renews the hold instead of releasing and re-holding, which would hand the seats to
 whoever is racing for them. Bookings carry the server's exact-selection plus
-`bookingRef` safeguard, but the SDK sends each booking once — reconcile an unknown
+`bookingRef` safeguard, but the SDK sends each booking once; reconcile an unknown
 outcome before trying again.
 
 ### Can I use my own payment provider?
