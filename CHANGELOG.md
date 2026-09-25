@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.8.0 (2026-09-10)
+
+- Added Event hosting regions: `region` on `events.create`, the `EventHostingRegion` type, `defaultRegion` on workspace create and update, and `region` on every Event read back (null on older Events). Events created without a region run in Western Europe.
+
 ## 0.7.0 — 2026-08-30
 
 - Adds all 48 Fixed Renewable Season operations across catalogue, lifecycle,
