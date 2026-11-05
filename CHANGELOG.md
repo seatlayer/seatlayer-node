@@ -2,11 +2,11 @@
 
 ## Unreleased
 
-- Adds 32 Season operations (80 in all): performances and package prices,
+- Adds 35 Season operations (83 in all): performances and package prices,
   `publishSeason`, checkout tests, import from a previous season, occurrence
   inventory returns and reclaims, the holder list, season order refunds and
   cancellations, hosted renewal links, contacts and notices, sales and seat
-  reports, and holder and order CSV exports.
+  reports, holder and order CSV exports, and bulk refunds with their jobs.
 - Adds `holders` (customers, holders, holder tickets, ticket transfers),
   `orders` (orders across events and seasons, and one event's orders, refunds,
   cancellations and resends), and `eventSeries` resources.
@@ -15,7 +15,7 @@
 - Adds 14 event sales operations to `events`: buyer checkout choice, payment
   gateway, sales readiness, preflight and transitions, booking fee, and
   discount codes.
-- 23 of the new mutations use exact header replay (37 in all) and reuse one
+- 24 of the new mutations use exact header replay (38 in all) and reuse one
   `Idempotency-Key` across retries; the others are sent once. CSV exports
   resolve with the CSV text; `deleteSeasonPlan` and `deleteEventDiscountCode`
   resolve with nothing.
@@ -23,6 +23,25 @@
   `series.dates_added`, `order.paid`, `order.refunded`, `order.cancelled`,
   `customer.created`, `customer.email_changed`, `season.ticket.transfer_sent`,
   `season.ticket.transferred`, and `season.ticket.transfer_cancelled`.
+- Adds `seasons.refundSeasonPerformance` (refund every order of a cancelled date as a job, with
+  header replay), `seasons.listSeasonBulkJobs`, and `seasons.retrieveSeasonBulkJob`
+  (`SeasonBulkJob`, `SeasonBulkJobDetail`, `RefundSeasonPerformanceParams`).
+- Adds price types: `priceTypeKey` on `replaceSeasonPackagePrices` rows (`SeasonPackagePriceInput`,
+  `SeasonPriceTypeKey`), `priceTypeKey` and `priceTypeLabel` on every `SeasonPackagePrice`,
+  `priceTypeKey` on each `SeasonHoldItem`, and `seats` with `priceTypeKey` on a retrieved or
+  inspected `SeasonRenewalOffer`.
+- `createSeasonAmendment` takes `kind: 'postpone' | 'cancel'` with `refund` and `reason`
+  (`CreateSeasonAmendmentParams`) and resolves with the `refundJob` a refunding cancel starts.
+- `SeasonAmendment.kind` adds `postpone`, `cancel`, `performance_added`, `performance_removed`, and
+  `performance_past` (`SeasonAmendmentKind`).
+- `updateSeason` takes `checkoutMode`, `transferCutoffHours`, and `returnCutoffHours`
+  (`UpdateSeasonParams`).
+- `SeasonHolderImportRow` takes `holderEmail` and `holderName`.
+- `WebhookEventName` lists all 56 public event names, adding `object.resale.*`,
+  `season.occurrence.*`, `season.performance.*` (including `postponed`, `cancelled`, and
+  `rescheduled`), `season.bulk_action.completed`, `season.order.*`, `season.ticket.issued`, and
+  `season.ticket.voided`.
+- `events.list` and `events.listAll` take `seriesKey` to list one event series' dates.
 
 ## 0.8.0 (2026-09-10)
 

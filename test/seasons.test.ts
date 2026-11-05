@@ -3,7 +3,13 @@ import {
   SeatLayer,
   SeatLayerError,
   SeatLayerRateLimitError,
+  type SeasonAmendment,
+  type SeasonBulkJobDetail,
   type SeasonHold,
+  type SeasonPackagePrice,
+  type SeasonPriceList,
+  type SeasonPriceTypeKey,
+  type SeasonRenewalOffer,
   type SeasonValidation,
 } from '../src/index.js';
 
@@ -683,7 +689,132 @@ describe('Season organizer resource', () => {
     ]);
   });
 
-  it('exposes exactly 80 season operations, plus the polling helpers and the import alias', () => {
+  it('maps the bulk refund of a cancelled date and the job reads', async () => {
+    const job = {
+      jobId: 'sbj_1', kind: 'bulk_refund', state: 'planning',
+      counts: { total: 0, done: 0, skipped: 0, failed: 0 }, createdAt: 1, updatedAt: 1, completedAt: null,
+    };
+    await expectOperations([
+      {
+        name: 'refundSeasonPerformance',
+        run: (sdk) => sdk.seasons.refundSeasonPerformance('sea_a/b', 'ev a/b', {
+          amount: 'per_date', reason: 'Storm',
+        }, { idempotencyKey: 'refund-date-1' }),
+        method: 'POST', path: '/v1/seasons/sea_a%2Fb/performances/ev%20a%2Fb/refunds',
+        body: { amount: 'per_date', reason: 'Storm' }, idempotencyKey: 'refund-date-1',
+        response: { status: 202, body: { job } }, returns: { job },
+      },
+      {
+        name: 'refundSeasonPerformance without a key',
+        run: (sdk) => sdk.seasons.refundSeasonPerformance('sea_1', 'ev_1', { amount: 'full' }),
+        method: 'POST', path: '/v1/seasons/sea_1/performances/ev_1/refunds',
+        body: { amount: 'full' }, idempotencyKey: 'generated', response: { status: 202, body: { job } },
+      },
+      {
+        name: 'listSeasonBulkJobs',
+        run: (sdk) => sdk.seasons.listSeasonBulkJobs('sea_a/b'),
+        method: 'GET', path: '/v1/seasons/sea_a%2Fb/jobs',
+        response: { status: 200, body: { jobs: [job] } }, returns: { jobs: [job] },
+      },
+      {
+        name: 'retrieveSeasonBulkJob',
+        run: (sdk) => sdk.seasons.retrieveSeasonBulkJob('sea_a/b', 'sbj/1'),
+        method: 'GET', path: '/v1/seasons/sea_a%2Fb/jobs/sbj%2F1',
+        response: { status: 200, body: { job: { ...job, failedItems: [] } } },
+      },
+    ]);
+  });
+
+  it('retries a bulk refund with one key', async () => {
+    const stub = stubFetch([
+      { status: 503, body: { error: 'unavailable' } },
+      { status: 202, body: { job: { jobId: 'sbj_1' } } },
+    ]);
+    const sdk = new SeatLayer({ secretKey: 'sk_test_abc', fetch: stub.fetch, maxRetries: 2 });
+    await sdk.seasons.refundSeasonPerformance('sea_1', 'ev_1', { amount: 'full' });
+    const headers = stub.calls.map((call) => call.init.headers as Record<string, string>);
+    expect(headers[0]!['Idempotency-Key']).toMatch(GENERATED_KEY);
+    expect(headers[1]!['Idempotency-Key']).toBe(headers[0]!['Idempotency-Key']);
+  });
+
+  it('sends price types, season sale settings, holder contacts, and date cancels', async () => {
+    await expectOperations([
+      {
+        name: 'replaceSeasonPackagePrices with a child price',
+        run: (sdk) => sdk.seasons.replaceSeasonPackagePrices('sea_1', 'spl_1', {
+          prices: [
+            { categoryKey: 'stalls', unitPrice: 18_000 },
+            { categoryKey: 'stalls', priceTypeKey: 'child', unitPrice: 9_000 },
+          ],
+        }, { idempotencyKey: 'prices-2' }),
+        method: 'PUT', path: '/v1/seasons/sea_1/plans/spl_1/prices',
+        body: { prices: [
+          { categoryKey: 'stalls', unitPrice: 18_000 },
+          { categoryKey: 'stalls', priceTypeKey: 'child', unitPrice: 9_000 },
+        ] },
+        idempotencyKey: 'prices-2',
+      },
+      {
+        name: 'updateSeason with checkout mode and cutoffs',
+        run: (sdk) => sdk.seasons.updateSeason('sea_1', {
+          expectedRevision: 3, checkoutMode: 'seatlayer', transferCutoffHours: 24, returnCutoffHours: null,
+        }, { idempotencyKey: 'sell-1' }),
+        method: 'PATCH', path: '/v1/seasons/sea_1',
+        body: { expectedRevision: 3, checkoutMode: 'seatlayer', transferCutoffHours: 24, returnCutoffHours: null },
+        idempotencyKey: 'sell-1',
+      },
+      {
+        name: 'createSeasonHolderImport with holder contacts',
+        run: (sdk) => sdk.seasons.createSeasonHolderImport('sea_1', {
+          successorPlanActivationId: 'spa_1',
+          rows: [{
+            rowId: 'r1', holderRef: 'h1', priorPlanActivationId: 'spa_0', priorContractRef: 'c1', labels: ['A-1'],
+            holderEmail: 'ana@example.com', holderName: 'Ana Silva',
+          }],
+        }, { idempotencyKey: 'import-2' }),
+        method: 'POST', path: '/v1/seasons/sea_1/imports',
+        body: {
+          successorPlanActivationId: 'spa_1',
+          rows: [{
+            rowId: 'r1', holderRef: 'h1', priorPlanActivationId: 'spa_0', priorContractRef: 'c1', labels: ['A-1'],
+            holderEmail: 'ana@example.com', holderName: 'Ana Silva',
+          }],
+        },
+        idempotencyKey: 'import-2', response: { status: 201, body: { import: { importId: 'sim_1' } } },
+      },
+      {
+        name: 'createSeasonAmendment cancel with a refund',
+        run: (sdk) => sdk.seasons.createSeasonAmendment('sea_1', {
+          eventKey: 'ev_night_3', kind: 'cancel', refund: 'per_date', reason: 'Storm',
+        }, { idempotencyKey: 'night-3-storm' }),
+        method: 'POST', path: '/v1/seasons/sea_1/amendments',
+        body: { eventKey: 'ev_night_3', kind: 'cancel', refund: 'per_date', reason: 'Storm' },
+        idempotencyKey: 'night-3-storm',
+        response: { status: 201, body: { amendment: { kind: 'cancel' }, refundJob: { jobId: 'sbj_1', kind: 'bulk_refund' } } },
+      },
+      {
+        name: 'createSeasonAmendment postpone',
+        run: (sdk) => sdk.seasons.createSeasonAmendment('sea_1', { eventKey: 'ev_1', kind: 'postpone' }),
+        method: 'POST', path: '/v1/seasons/sea_1/amendments',
+        body: { eventKey: 'ev_1', kind: 'postpone' }, idempotencyKey: 'generated',
+        response: { status: 201, body: { amendment: { kind: 'postpone' } } },
+      },
+    ]);
+  });
+
+  it('types price types on prices, holds, and renewal seats, and the new amendment kinds', () => {
+    expectTypeOf<SeasonPackagePrice['priceTypeKey']>().toEqualTypeOf<SeasonPriceTypeKey>();
+    expectTypeOf<SeasonPackagePrice['priceTypeLabel']>().toEqualTypeOf<string>();
+    expectTypeOf<SeasonPriceList['packages'][number]['prices'][number]>().toEqualTypeOf<SeasonPackagePrice>();
+    expectTypeOf<SeasonHold['allocations'][number]['items'][number]['priceTypeKey']>().toEqualTypeOf<string>();
+    expectTypeOf<NonNullable<SeasonRenewalOffer['seats']>[number]['priceTypeKey']>().toEqualTypeOf<string>();
+    expectTypeOf<'performance_added'>().toMatchTypeOf<SeasonAmendment['kind']>();
+    expectTypeOf<'performance_removed'>().toMatchTypeOf<SeasonAmendment['kind']>();
+    expectTypeOf<'cancel'>().toMatchTypeOf<SeasonAmendment['kind']>();
+    expectTypeOf<SeasonBulkJobDetail['failedItems'][number]['error']>().toEqualTypeOf<string | null>();
+  });
+
+  it('exposes exactly 83 season operations, plus the polling helpers and the import alias', () => {
     const sdk = new SeatLayer({ secretKey: 'sk_test_abc', fetch: stubFetch([]).fetch });
     const methods = Object.getOwnPropertyNames(Object.getPrototypeOf(sdk.seasons))
       .filter((name) => name !== 'constructor');
@@ -691,7 +822,7 @@ describe('Season organizer resource', () => {
     expect(helpers.sort()).toEqual([
       'importSeasonHolders', 'waitForSeasonBooking', 'waitForSeasonLifecycle', 'waitForSeasonRenewal',
     ]);
-    expect(methods.length - helpers.length).toBe(80);
+    expect(methods.length - helpers.length).toBe(83);
   });
 
   it('types CSV exports as text and the 204 plan delete as void', () => {

@@ -136,6 +136,8 @@ export interface SeasonHoldItem {
   categoryKey: string;
   tierId: string | null;
   quantity: number;
+  /** The price type the seat is held as: `adult` unless the hold named another. */
+  priceTypeKey: string;
 }
 
 export interface SeasonHoldAllocation {
@@ -177,6 +179,9 @@ export interface SeasonHolderImportRow {
   priorContractRef: string;
   labels: string[];
   existingBookingRef?: string | null;
+  /** Where the holder's renewal emails go. */
+  holderEmail?: string | null;
+  holderName?: string | null;
 }
 
 export interface SeasonHolderImport {
@@ -218,6 +223,11 @@ export interface SeasonRenewalOffer {
     state: 'pending' | 'committed' | 'failed';
     code: string | null;
   }>;
+  /**
+   * Each seat with the price type its renewal keeps (a child seat renews at the
+   * child price). Sent by `retrieveSeasonRenewalOffer` and `inspectSeasonRenewalOffer`.
+   */
+  seats?: Array<{ label: string; priceTypeKey: string; [key: string]: unknown }>;
   createdAt: number;
   updatedAt: number;
 }
@@ -242,9 +252,30 @@ export interface SeasonOccurrence {
   latestAmendment: { amendmentId: string; kind: string; classification: string } | null;
 }
 
+/** Amendment kinds you can ask for with `createSeasonAmendment`. */
+export type SeasonAmendmentRequestKind = 'reschedule' | 'replace' | 'cancel_exception' | 'postpone' | 'cancel';
+
+/**
+ * Every amendment kind a read can return: the requestable kinds plus the
+ * membership records a package's date changes write.
+ */
+export type SeasonAmendmentKind = SeasonAmendmentRequestKind
+  | 'performance_added' | 'performance_removed' | 'performance_past';
+
+export interface CreateSeasonAmendmentParams {
+  eventKey: string;
+  kind: SeasonAmendmentRequestKind;
+  startsAt?: number;
+  name?: string;
+  /** With `cancel` only: refund the date's SeatLayer orders as a job. `none` (the default) refunds nothing. */
+  refund?: 'none' | 'per_date' | 'full';
+  /** With a refund: kept on the job. */
+  reason?: string;
+}
+
 export interface SeasonAmendment {
   amendmentId: string; revision: number; eventKey: string;
-  kind: 'reschedule' | 'replace' | 'cancel_exception';
+  kind: SeasonAmendmentKind;
   classification: 'identity_preserving' | 'exception';
   planActivationId: string | null; occurrenceSetSha256: string;
   before: Record<string, unknown>; after: Record<string, unknown>;
@@ -398,11 +429,26 @@ export interface SeasonCheckoutTest {
   [key: string]: unknown;
 }
 
+/** The kinds of seat a package can price a category for. A price without one is `adult`. */
+export type SeasonPriceTypeKey = 'adult' | 'child' | 'concession' | 'senior' | 'student';
+
 export interface SeasonPackagePrice {
   categoryKey: string;
+  priceTypeKey: SeasonPriceTypeKey;
+  /** The type's display name, such as `Child`. */
+  priceTypeLabel: string;
   /** Minor units. */
   unitPrice: number;
   [key: string]: unknown;
+}
+
+/** One row of a `replaceSeasonPackagePrices` table. */
+export interface SeasonPackagePriceInput {
+  categoryKey: string;
+  /** Leave out for `adult`. Each category takes each type once. */
+  priceTypeKey?: SeasonPriceTypeKey;
+  /** Minor units. */
+  unitPrice: number;
 }
 
 export interface SeasonPackagePrices {
@@ -434,6 +480,64 @@ export interface SeasonDateJob {
   updatedAt: number;
   completedAt: number | null;
   [key: string]: unknown;
+}
+
+export type SeasonBulkJobKind =
+  | 'date_added' | 'date_removed' | 'renewal_run' | 'lapsed_release' | 'bulk_refund' | 'series_dates' | 'series_update';
+
+export type SeasonBulkJobState = 'planning' | 'running' | 'completed' | 'failed' | 'cancelled';
+
+export interface SeasonBulkJobCounts {
+  total: number;
+  done: number;
+  skipped: number;
+  failed: number;
+  [key: string]: unknown;
+}
+
+/** Background work on a Season, such as the refund of a cancelled date. */
+export interface SeasonBulkJob {
+  jobId: string;
+  kind: SeasonBulkJobKind;
+  state: SeasonBulkJobState;
+  counts: SeasonBulkJobCounts;
+  createdAt: number;
+  updatedAt: number;
+  completedAt: number | null;
+  [key: string]: unknown;
+}
+
+export interface SeasonBulkJobDetail extends SeasonBulkJob {
+  /** At most 500. For a refund, `key` is the order id and `error` the provider's reason. */
+  failedItems: Array<{ key: string; error: string | null; attempts: number; [key: string]: unknown }>;
+}
+
+/** The refund job a `cancel` amendment started when it asked for a refund. */
+export interface SeasonRefundJobSummary {
+  jobId: string;
+  kind: 'bulk_refund';
+  state: string;
+  counts: SeasonBulkJobCounts;
+  [key: string]: unknown;
+}
+
+export interface RefundSeasonPerformanceParams {
+  /** `per_date`: the date's share of each order (rounded down). `full`: what is left of each order. */
+  amount: 'per_date' | 'full';
+  /** Kept on the job. */
+  reason?: string;
+}
+
+export interface UpdateSeasonParams {
+  expectedRevision: number;
+  name?: string;
+  edition?: string | null;
+  /** Who takes the money. It cannot go back to undecided, and it is fixed once a live booking exists. */
+  checkoutMode?: 'seatlayer' | 'server';
+  /** Hours before a date starts that its tickets stop being sent to others (0 to 720); `null` means until it starts. */
+  transferCutoffHours?: number | null;
+  /** Hours before a date starts that a holder can no longer give a seat back (0 to 720); `null` means until it starts. */
+  returnCutoffHours?: number | null;
 }
 
 export interface SeasonStoppedOrder {
@@ -717,7 +821,7 @@ export class Seasons {
 
   updateSeason(
     seasonKey: string,
-    params: { expectedRevision: number; name?: string; edition?: string | null },
+    params: UpdateSeasonParams,
     options: { idempotencyKey?: string; signal?: AbortSignal } = {},
   ): Promise<{ season: SeasonDetail }> {
     return this.#http.mutationWithHeaderReplay('PATCH', `/v1/seasons/${pathPart(seasonKey)}`, {
@@ -945,12 +1049,9 @@ export class Seasons {
 
   createSeasonAmendment(
     seasonKey: string,
-    params: {
-      eventKey: string; kind: 'reschedule' | 'replace' | 'cancel_exception';
-      startsAt?: number; name?: string;
-    },
+    params: CreateSeasonAmendmentParams,
     options: { idempotencyKey?: string; signal?: AbortSignal } = {},
-  ): Promise<{ amendment: SeasonAmendment }> {
+  ): Promise<{ amendment: SeasonAmendment; refundJob?: SeasonRefundJobSummary }> {
     return this.#http.postWithHeaderReplay(`/v1/seasons/${pathPart(seasonKey)}/amendments`, {
       body: params, idempotencyKey: options.idempotencyKey, signal: options.signal,
     });
@@ -1126,7 +1227,7 @@ export class Seasons {
   replaceSeasonPackagePrices(
     seasonKey: string,
     planKey: string,
-    params: { prices: Array<{ categoryKey: string; unitPrice: number }>; currency?: string },
+    params: { prices: SeasonPackagePriceInput[]; currency?: string },
     options: { idempotencyKey?: string; signal?: AbortSignal } = {},
   ): Promise<SeasonPackagePrices> {
     return this.#http.mutationWithHeaderReplay(
@@ -1347,6 +1448,32 @@ export class Seasons {
   /** Retrieve Season seats sold per package and per date. */
   retrieveSeasonSeatCounts(seasonKey: string): Promise<{ seats: SeasonSeatCounts | null }> {
     return this.#http.get(`/v1/seasons/${pathPart(seasonKey)}/seat-counts`);
+  }
+
+  /**
+   * Refund every SeatLayer order holding a cancelled date, as a job. Follow it with
+   * `retrieveSeasonBulkJob`. Retried safely with one Idempotency-Key, which replays the same job.
+   */
+  refundSeasonPerformance(
+    seasonKey: string,
+    eventKey: string,
+    params: RefundSeasonPerformanceParams,
+    options: { idempotencyKey?: string; signal?: AbortSignal } = {},
+  ): Promise<{ job: SeasonBulkJob }> {
+    return this.#http.postWithHeaderReplay(
+      `/v1/seasons/${pathPart(seasonKey)}/performances/${pathPart(eventKey)}/refunds`,
+      { body: params, idempotencyKey: options.idempotencyKey, signal: options.signal },
+    );
+  }
+
+  /** List a Season's bulk jobs, newest first (100 at most). */
+  listSeasonBulkJobs(seasonKey: string): Promise<{ jobs: SeasonBulkJob[] }> {
+    return this.#http.get(`/v1/seasons/${pathPart(seasonKey)}/jobs`);
+  }
+
+  /** Retrieve one bulk job with its counts and up to 500 failed items. */
+  retrieveSeasonBulkJob(seasonKey: string, jobId: string): Promise<{ job: SeasonBulkJobDetail }> {
+    return this.#http.get(`/v1/seasons/${pathPart(seasonKey)}/jobs/${pathPart(jobId)}`);
   }
 
   async waitForSeasonRenewal(

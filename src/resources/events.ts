@@ -25,6 +25,8 @@ export interface EventListOptions {
   cursor?: string;
   /** Include live availability counts. One server round-trip per event. */
   counts?: boolean;
+  /** Only the dates of this event series. */
+  seriesKey?: string;
 }
 
 export interface EventPage {
@@ -213,6 +215,7 @@ export class Events {
         limit: options.limit,
         cursor: options.cursor,
         ...(options.counts === false ? { counts: '0' } : {}),
+        seriesKey: options.seriesKey,
       },
     });
   }

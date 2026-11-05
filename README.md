@@ -356,6 +356,12 @@ exactly when you don't want that, and you can control it explicitly:
 await seatlayer.events.list({ limit: 50, counts: false });
 ```
 
+To list only the dates of one event series, pass its key:
+
+```ts
+await seatlayer.events.list({ seriesKey: 'ser_1' });
+```
+
 ## Keeping a hold alive
 
 When an order takes longer than the checkout window (an invoice, a phone sale), extend rather than
@@ -463,16 +469,16 @@ requests.
 
 ## Reliability
 
-**Retries and idempotency.** Reads retry 408, 429 and 5xx responses with backoff. Thirty-seven
+**Retries and idempotency.** Reads retry 408, 429 and 5xx responses with backoff. Thirty-eight
 mutations use exact header replay: `charts.create`, `charts.copy`, `templates.instantiateTemplate`,
-`events.create`, `workspaces.create`, `performanceGroups.createPerformanceGroup`; 23 Season
+`events.create`, `workspaces.create`, `performanceGroups.createPerformanceGroup`; 24 Season
 operations (`createSeason`, `updateSeason`, `deleteSeason`, `publishSeason`, `createSeasonPlan`,
 `updateSeasonPlan`, `deleteSeasonPlan`, `duplicateSeasonToLive`, `createSeasonHolderImport`,
 `createSeasonHolderImportFromSeason`, `createSeasonRenewalOffers`, `createSeasonAmendment`,
 `createSeasonPerformances`, `attachSeasonPerformances`, `deleteSeasonPerformance`,
 `markSeasonPerformancePast`, `attachSeasonPlanPerformance`, `deleteSeasonPlanPerformance`,
 `replaceSeasonPackagePrices`, `createSeasonCheckoutTest`, `refundSeasonOrder`, `cancelSeasonOrder`,
-and `cancelSeasonOrderDate`); `holders.updateHolder`, `holders.createHolderTransfer`, and
+`cancelSeasonOrderDate`, and `refundSeasonPerformance`); `holders.updateHolder`, `holders.createHolderTransfer`, and
 `holders.createHolderReturn`; `orders.refundEventOrder` and `orders.cancelEventOrder`; and
 `eventSeries.createEventSeries`, `eventSeries.addEventSeriesDates`, and
 `eventSeries.updateEventSeries`. The SDK generates one
@@ -487,7 +493,7 @@ before trying again.
 ```ts
 new SeatLayer({
   secretKey: process.env.SEATLAYER_SECRET_KEY!,
-  maxRetries: 3,      // retries for reads and the 37 exact-header-replay mutations
+  maxRetries: 3,      // retries for reads and the 38 exact-header-replay mutations
   timeoutMs: 30_000,  // per attempt
 });
 ```
@@ -524,7 +530,7 @@ string.
 | `webhooks` | `list` `create` `update` `delete` `listDeliveries` |
 | `workspaces` | `list` `create` `retrieve` `update` |
 | `performanceGroups` | `listPerformanceGroups` `createPerformanceGroup` `retrievePerformanceGroup` `deletePerformanceGroup` `activatePerformanceGroup` `closePerformanceGroup` `retrievePerformanceGroupLifecycle` `createPerformanceGroupBuyerAccessSession` `listPerformanceGroupBuyerAccessSessions` `revokePerformanceGroupBuyerAccessSession` `retrievePerformanceGroupHold` `bookPerformanceGroupHold` `retrievePerformanceGroupBooking` |
-| `seasons` | 80 organizer operations for catalogue and Plan lifecycle, performances and package prices, sales windows, buyer access and booking, checkout tests, holder imports and the holder list, season orders, renewals and hosted renewal links, occurrence amendments and inventory returns, sales and seat reports, CSV exports, audit, outbox, and support export, plus polling helpers |
+| `seasons` | 83 organizer operations for catalogue and Plan lifecycle, performances and package prices (with price types), sales windows, buyer access and booking, checkout tests, holder imports and the holder list, season orders, renewals and hosted renewal links, occurrence amendments (postpone, cancel) and inventory returns, bulk refunds of a cancelled date and the jobs that run them, sales and seat reports, CSV exports, audit, outbox, and support export, plus polling helpers |
 
 Full reference: [SeatLayer Server API](https://docs.seatlayer.io/server-api/events/)
 
