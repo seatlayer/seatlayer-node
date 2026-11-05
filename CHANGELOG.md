@@ -10,10 +10,12 @@
 - Adds `holders` (customers, holders, holder tickets, ticket transfers),
   `orders` (orders across events and seasons, and one event's orders, refunds,
   cancellations and resends), and `eventSeries` resources.
+- Adds `holders.createHolderReturn`: give back a holder's seat on one date, one
+  per ticket (`HolderReturn`, `HolderReturnTicket`, `CreateHolderReturnParams`).
 - Adds 14 event sales operations to `events`: buyer checkout choice, payment
   gateway, sales readiness, preflight and transitions, booking fee, and
   discount codes.
-- 22 of the new mutations use exact header replay (36 in all) and reuse one
+- 23 of the new mutations use exact header replay (37 in all) and reuse one
   `Idempotency-Key` across retries; the others are sent once. CSV exports
   resolve with the CSV text; `deleteSeasonPlan` and `deleteEventDiscountCode`
   resolve with nothing.

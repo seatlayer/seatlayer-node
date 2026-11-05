@@ -75,7 +75,7 @@ async function expectOperations(cases: OperationCase[]) {
 }
 
 describe('Holders resource', () => {
-  it('maps all 11 holder, customer, ticket, and transfer operations', async () => {
+  it('maps all 12 holder, customer, ticket, transfer, and return operations', async () => {
     await expectOperations([
       {
         name: 'listCustomers',
@@ -143,6 +143,16 @@ describe('Holders resource', () => {
         run: (sdk) => sdk.holders.acceptHolderTransfer('holder a/b', 'trf/1'),
         method: 'POST', path: '/v1/holders/holder%20a%2Fb/transfers/trf%2F1/accept',
       },
+      {
+        name: 'createHolderReturn',
+        run: (sdk) => sdk.holders.createHolderReturn('holder a/b', {
+          ticketIds: ['tkt_0123456789abcdef01234567'],
+        }),
+        method: 'POST', path: '/v1/holders/holder%20a%2Fb/returns',
+        body: { ticketIds: ['tkt_0123456789abcdef01234567'] }, idempotencyKey: 'generated',
+        response: { status: 201, body: { return: { returnId: 'ret_1', state: 'pending' } } },
+        returns: { return: { returnId: 'ret_1', state: 'pending' } },
+      },
     ]);
   });
 
@@ -162,6 +172,42 @@ describe('Holders resource', () => {
     expect(headers[1]!['Idempotency-Key']).toBe(headers[0]!['Idempotency-Key']);
     expect(headers[2]!['Idempotency-Key']).toBeUndefined();
     expect(stub.calls[2]!.init.body).toBeUndefined();
+    expect(stub.responses).toHaveLength(0);
+  });
+
+  it('reuses one Idempotency-Key when a return retries, generated or the caller\'s', async () => {
+    const created = {
+      return: {
+        returnId: 'ret_1',
+        state: 'returned',
+        seasonKey: 'sea_1',
+        tickets: [{ ticketId: 'tkt_0123456789abcdef01234567', eventKey: 'ev_1', label: 'A-1', state: 'returned', error: null }],
+        createdAt: 1,
+      },
+    };
+    const stub = stubFetch([
+      { status: 503, body: { error: 'unavailable' } },
+      { status: 201, body: created },
+      { status: 429, body: { error: 'rate_limited' }, headers: { 'retry-after': '0' } },
+      { status: 200, body: created },
+    ]);
+    const sdk = new SeatLayer({ secretKey: 'sk_test_abc', fetch: stub.fetch, maxRetries: 3 });
+    const params = { ticketIds: ['tkt_0123456789abcdef01234567'] };
+
+    const first = await sdk.holders.createHolderReturn('a/b', params);
+    const again = await sdk.holders.createHolderReturn('a/b', params, { idempotencyKey: 'return-1' });
+
+    expect(first).toEqual(created);
+    expect(again).toEqual(created);
+    expectTypeOf(first.return.tickets[0]!.state).toEqualTypeOf<'pending' | 'returned' | 'failed'>();
+    const headers = stub.calls.map((call) => call.init.headers as Record<string, string>);
+    expect(stub.calls.map((call) => `${call.init.method} ${new URL(call.url).pathname}`))
+      .toEqual(Array(4).fill('POST /v1/holders/a%2Fb/returns'));
+    expect(stub.calls.map((call) => JSON.parse(call.init.body as string))).toEqual(Array(4).fill(params));
+    expect(headers[0]!['Idempotency-Key']).toMatch(GENERATED_KEY);
+    expect(headers[1]!['Idempotency-Key']).toBe(headers[0]!['Idempotency-Key']);
+    expect(headers[2]!['Idempotency-Key']).toBe('return-1');
+    expect(headers[3]!['Idempotency-Key']).toBe('return-1');
     expect(stub.responses).toHaveLength(0);
   });
 });

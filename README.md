@@ -463,7 +463,7 @@ requests.
 
 ## Reliability
 
-**Retries and idempotency.** Reads retry 408, 429 and 5xx responses with backoff. Thirty-six
+**Retries and idempotency.** Reads retry 408, 429 and 5xx responses with backoff. Thirty-seven
 mutations use exact header replay: `charts.create`, `charts.copy`, `templates.instantiateTemplate`,
 `events.create`, `workspaces.create`, `performanceGroups.createPerformanceGroup`; 23 Season
 operations (`createSeason`, `updateSeason`, `deleteSeason`, `publishSeason`, `createSeasonPlan`,
@@ -472,9 +472,10 @@ operations (`createSeason`, `updateSeason`, `deleteSeason`, `publishSeason`, `cr
 `createSeasonPerformances`, `attachSeasonPerformances`, `deleteSeasonPerformance`,
 `markSeasonPerformancePast`, `attachSeasonPlanPerformance`, `deleteSeasonPlanPerformance`,
 `replaceSeasonPackagePrices`, `createSeasonCheckoutTest`, `refundSeasonOrder`, `cancelSeasonOrder`,
-and `cancelSeasonOrderDate`); `holders.updateHolder` and `holders.createHolderTransfer`;
-`orders.refundEventOrder` and `orders.cancelEventOrder`; and `eventSeries.createEventSeries`,
-`eventSeries.addEventSeriesDates`, and `eventSeries.updateEventSeries`. The SDK generates one
+and `cancelSeasonOrderDate`); `holders.updateHolder`, `holders.createHolderTransfer`, and
+`holders.createHolderReturn`; `orders.refundEventOrder` and `orders.cancelEventOrder`; and
+`eventSeries.createEventSeries`, `eventSeries.addEventSeriesDates`, and
+`eventSeries.updateEventSeries`. The SDK generates one
 `Idempotency-Key` and reuses it for every attempt. All remaining SDK mutations are sent once; some
 have a server-side domain idempotency contract, but the SDK does not retry them automatically.
 
@@ -486,7 +487,7 @@ before trying again.
 ```ts
 new SeatLayer({
   secretKey: process.env.SEATLAYER_SECRET_KEY!,
-  maxRetries: 3,      // retries for reads and the 36 exact-header-replay mutations
+  maxRetries: 3,      // retries for reads and the 37 exact-header-replay mutations
   timeoutMs: 30_000,  // per attempt
 });
 ```
@@ -516,7 +517,7 @@ string.
 | `events` | `list` `listAll` `create` `retrieve` `retrieveConfigurationBinding` `updateConfigurationBinding` `update` `delete` `updatePoster` `deletePoster` `updateChart` `close` `reopen` `archive` `retrieveHoldTtl` `updateHoldTtl` `listTicketReleases` `updateTicketReleases` `closeTicketRelease` `retrieveReport` `retrieveLog` `retrieveEventBuyerCheckout` `replaceEventBuyerCheckout` `retrieveEventPaymentGateway` `replaceEventPaymentGateway` `retrieveEventSalesReadiness` `preflightEventSales` `transitionEventSales` `retrieveEventBookingFee` `replaceEventBookingFee` `listEventDiscountCodes` `createEventDiscountCode` `updateEventDiscountCode` `endEventDiscountCode` `deleteEventDiscountCode` |
 | `eventSeries` | `createEventSeries` `listEventSeries` `retrieveEventSeries` `addEventSeriesDates` `updateEventSeries` |
 | `orders` | `listOrders` `retrieveOrder` `listOrderTickets` `listEventOrders` `retrieveEventOrder` `exportEventOrdersCsv` `refundEventOrder` `cancelEventOrder` `resendEventOrderTickets` |
-| `holders` | `listCustomers` `retrieveHolder` `updateHolder` `revokeHolderSessions` `listHolderSeasons` `listHolderTickets` `retrieveHolderTicket` `createHolderTransfer` `listHolderTransfers` `cancelHolderTransfer` `acceptHolderTransfer` |
+| `holders` | `listCustomers` `retrieveHolder` `updateHolder` `revokeHolderSessions` `listHolderSeasons` `listHolderTickets` `retrieveHolderTicket` `createHolderTransfer` `listHolderTransfers` `cancelHolderTransfer` `acceptHolderTransfer` `createHolderReturn` |
 | `inventory` | `hold` `holdBestAvailable` `bookBestAvailable` `extendHold` `retrieveHold` `release` `book` `boxOfficeBook` `unbook` `block` `unblock` `unblockAll` `retrieveAvailability` `updateAvailability` `listBookings` `retrieveBooking` `listInventoryBookings` `retrieveInventoryBooking` |
 | `channels` | `listChannels` `createChannel` `updateChannel` `updateChannelAssignments` `listChannelAllocation` `retrieveChannelAccessPreview` `pauseChannel` `unpauseChannel` `archiveChannel` `retrieveChannelReport` `createBuyerAccessSession` `listBuyerAccessSessions` `revokeBuyerAccessSession` `createAccessLink` `listAccessLinks` `rotateAccessLink` `revokeAccessLink` |
 | `sessions` | `createManageSession` `revokeManageSession` `createDesignerSession` `revokeDesignerSession` |

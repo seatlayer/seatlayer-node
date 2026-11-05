@@ -118,8 +118,33 @@ export interface CreateHolderTransferParams {
   toEmail: string;
 }
 
+export interface HolderReturnTicket {
+  ticketId: string;
+  eventKey: string;
+  label: string;
+  state: 'pending' | 'returned' | 'failed';
+  /** Why this seat could not be given back, when `state` is `failed`. */
+  error: string | null;
+  [key: string]: unknown;
+}
+
+export interface HolderReturn {
+  returnId: string;
+  /** `pending` while a seat is still being released; it finishes on its own. */
+  state: 'pending' | 'returned' | 'failed';
+  seasonKey: string;
+  tickets: HolderReturnTicket[];
+  createdAt: number;
+  [key: string]: unknown;
+}
+
+export interface CreateHolderReturnParams {
+  /** 1 to 20 ticket ids, all of one season. Each ticket is one seat on one date. */
+  ticketIds: string[];
+}
+
 /**
- * Season ticket holders, their customers, tickets, and ticket transfers.
+ * Season ticket holders, their customers, tickets, ticket transfers, and returns.
  * `holderRef` is your own holder reference, as your imports and bookings carry
  * it; a hosted season purchase uses its order id.
  */
@@ -216,5 +241,16 @@ export class Holders {
     return this.#http.post(
       `/v1/holders/${encodeURIComponent(holderRef)}/transfers/${encodeURIComponent(transferId)}/accept`,
     );
+  }
+
+  /** Give back a holder's seat on one date, one per ticket. Retried safely with one Idempotency-Key. */
+  createHolderReturn(
+    holderRef: string,
+    params: CreateHolderReturnParams,
+    options: { idempotencyKey?: string; signal?: AbortSignal } = {},
+  ): Promise<{ return: HolderReturn }> {
+    return this.#http.postWithHeaderReplay(`/v1/holders/${encodeURIComponent(holderRef)}/returns`, {
+      body: params, idempotencyKey: options.idempotencyKey, signal: options.signal,
+    });
   }
 }

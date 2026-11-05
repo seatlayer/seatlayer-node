@@ -234,11 +234,14 @@ export type {
   UpdateEventSeriesParams,
 } from './resources/event-series.js';
 export type {
+  CreateHolderReturnParams,
   CreateHolderTransferParams,
   Customer,
   CustomerListOptions,
   CustomerPage,
   Holder,
+  HolderReturn,
+  HolderReturnTicket,
   HolderSeason,
   HolderTicket,
   HolderTicketDetail,
