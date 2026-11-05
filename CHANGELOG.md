@@ -2,11 +2,12 @@
 
 ## Unreleased
 
-- Adds 35 Season operations (83 in all): performances and package prices,
+- Adds 38 Season operations (86 in all): performances and package prices,
   `publishSeason`, checkout tests, import from a previous season, occurrence
   inventory returns and reclaims, the holder list, season order refunds and
-  cancellations, hosted renewal links, contacts and notices, sales and seat
-  reports, holder and order CSV exports, and bulk refunds with their jobs.
+  cancellations, hosted renewal links, contacts and notices, renewal quotes,
+  intents and checkouts, sales and seat reports, holder and order CSV exports,
+  and bulk refunds with their jobs.
 - Adds `holders` (customers, holders, holder tickets, ticket transfers),
   `orders` (orders across events and seasons, and one event's orders, refunds,
   cancellations and resends), and `eventSeries` resources.
@@ -15,7 +16,7 @@
 - Adds 14 event sales operations to `events`: buyer checkout choice, payment
   gateway, sales readiness, preflight and transitions, booking fee, and
   discount codes.
-- 24 of the new mutations use exact header replay (38 in all) and reuse one
+- 26 of the new mutations use exact header replay (40 in all) and reuse one
   `Idempotency-Key` across retries; the others are sent once. CSV exports
   resolve with the CSV text; `deleteSeasonPlan` and `deleteEventDiscountCode`
   resolve with nothing.
@@ -42,6 +43,12 @@
   `rescheduled`), `season.bulk_action.completed`, `season.order.*`, `season.ticket.issued`, and
   `season.ticket.voided`.
 - `events.list` and `events.listAll` take `seriesKey` to list one event series' dates.
+- Adds `seasons.retrieveSeasonRenewalQuote`: what renewing an offer costs, and whether SeatLayer checkout can take it now (`SeasonRenewalQuote`, `SeasonRenewalQuoteProblem`).
+- Adds `seasons.createSeasonRenewalIntent`: record a holder's intent for a renewal taken by phone or at the box office, so your own checkout can commit.
+- Adds `seasons.createSeasonRenewalCheckout`: a SeatLayer checkout that renews an offer with no hosted page, with header replay (`SeasonRenewalCheckoutParams`, `SeasonRenewalCheckoutStarted`).
+- Adds `holders.createHolderRenewalCheckout`: the same checkout for one of a holder's offers, with header replay.
+- Adds `holders.declineHolderRenewalOffer`: decline one of a holder's offers, with an optional `reason`.
+- `declineSeasonRenewalOffer` takes an optional `{ reason }` (`DeclineSeasonRenewalOfferParams`), and `SeasonRenewalOffer` has `declineReason`.
 
 ## 0.8.0 (2026-09-10)
 

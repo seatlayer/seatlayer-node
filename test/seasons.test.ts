@@ -9,7 +9,9 @@ import {
   type SeasonPackagePrice,
   type SeasonPriceList,
   type SeasonPriceTypeKey,
+  type SeasonRenewalCheckoutStarted,
   type SeasonRenewalOffer,
+  type SeasonRenewalQuote,
   type SeasonValidation,
 } from '../src/index.js';
 
@@ -814,7 +816,109 @@ describe('Season organizer resource', () => {
     expectTypeOf<SeasonBulkJobDetail['failedItems'][number]['error']>().toEqualTypeOf<string | null>();
   });
 
-  it('exposes exactly 83 season operations, plus the polling helpers and the import alias', () => {
+  it('maps renewal by API: the quote, the phone intent, the checkout, and a decline reason', async () => {
+    const quote = {
+      offerId: 'sro_a/b', state: 'offered', totalMinor: 13_500, currency: 'GBP',
+      lines: [{ label: 'A-1', category: 'standard', priceTypeKey: 'adult', amountMinor: 9_000 }],
+      performances: [{ eventKey: 'ev_1', name: 'Night 1', startsAt: 1_790_000_000_000 }],
+      problem: null,
+    };
+    const started = {
+      orderId: 'ord_1', totalMinor: 13_500, currency: 'GBP', expiresAt: 1_790_000_900_000,
+      payment: { url: 'https://checkout.provider.example/pay' },
+    };
+    const declined = { offer: { offerId: 'sro_a/b', state: 'declined', declineReason: 'Moving away' } };
+    await expectOperations([
+      {
+        name: 'retrieveSeasonRenewalQuote',
+        run: (sdk) => sdk.seasons.retrieveSeasonRenewalQuote('sea_a/b', 'sro_a/b'),
+        method: 'GET', path: '/v1/seasons/sea_a%2Fb/renewal-offers/sro_a%2Fb/quote',
+        response: { status: 200, body: quote }, returns: quote,
+      },
+      {
+        name: 'createSeasonRenewalIntent',
+        run: (sdk) => sdk.seasons.createSeasonRenewalIntent('sea_a/b', 'sro_a/b'),
+        method: 'POST', path: '/v1/seasons/sea_a%2Fb/renewal-offers/sro_a%2Fb/intent',
+        response: { status: 200, body: { offer: { offerId: 'sro_a/b', state: 'intent_received' } } },
+      },
+      {
+        name: 'createSeasonRenewalCheckout',
+        run: (sdk) => sdk.seasons.createSeasonRenewalCheckout('sea_a/b', 'sro_a/b', {
+          returnUrl: 'https://tickets.example/renewed', buyerEmail: 'ana@example.com',
+          buyerName: 'Ana Silva', provider: 'stripe',
+        }, { idempotencyKey: 'renew-ana-2027' }),
+        method: 'POST', path: '/v1/seasons/sea_a%2Fb/renewal-offers/sro_a%2Fb/checkout',
+        body: {
+          returnUrl: 'https://tickets.example/renewed', buyerEmail: 'ana@example.com',
+          buyerName: 'Ana Silva', provider: 'stripe',
+        },
+        idempotencyKey: 'renew-ana-2027', response: { status: 201, body: started }, returns: started,
+      },
+      {
+        name: 'createSeasonRenewalCheckout without a key',
+        run: (sdk) => sdk.seasons.createSeasonRenewalCheckout('sea_1', 'sro_1', {
+          returnUrl: 'https://tickets.example/renewed',
+        }),
+        method: 'POST', path: '/v1/seasons/sea_1/renewal-offers/sro_1/checkout',
+        body: { returnUrl: 'https://tickets.example/renewed' }, idempotencyKey: 'generated',
+        response: { status: 201, body: started },
+      },
+      {
+        name: 'declineSeasonRenewalOffer with a reason',
+        run: (sdk) => sdk.seasons.declineSeasonRenewalOffer('sea_a/b', 'sro_a/b', { reason: 'Moving away' }),
+        method: 'POST', path: '/v1/seasons/sea_a%2Fb/renewal-offers/sro_a%2Fb/decline',
+        body: { reason: 'Moving away' }, response: { status: 200, body: declined },
+      },
+      {
+        name: 'declineSeasonRenewalOffer without a reason',
+        run: (sdk) => sdk.seasons.declineSeasonRenewalOffer('sea_1', 'sro_1'),
+        method: 'POST', path: '/v1/seasons/sea_1/renewal-offers/sro_1/decline', body: {},
+      },
+    ]);
+  });
+
+  it('retries a renewal checkout with one key, but sends the intent once', async () => {
+    const stub = stubFetch([
+      { status: 503, body: { error: 'unavailable' } },
+      { status: 201, body: { orderId: 'ord_1' } },
+      { status: 429, body: { error: 'rate_limited' }, headers: { 'retry-after': '0' } },
+      { status: 201, body: { orderId: 'ord_1' } },
+      { status: 503, body: { error: 'unavailable' } },
+    ]);
+    const sdk = new SeatLayer({ secretKey: 'sk_test_abc', fetch: stub.fetch, maxRetries: 2 });
+    const params = { returnUrl: 'https://tickets.example/renewed' };
+
+    await sdk.seasons.createSeasonRenewalCheckout('sea_1', 'sro_1', params);
+    await sdk.seasons.createSeasonRenewalCheckout('sea_1', 'sro_1', params, { idempotencyKey: 'renew-1' });
+    await expect(sdk.seasons.createSeasonRenewalIntent('sea_1', 'sro_1')).rejects.toBeInstanceOf(SeatLayerError);
+
+    const headers = stub.calls.map((call) => call.init.headers as Record<string, string>);
+    expect(stub.calls.map((call) => new URL(call.url).pathname)).toEqual([
+      ...Array(4).fill('/v1/seasons/sea_1/renewal-offers/sro_1/checkout'),
+      '/v1/seasons/sea_1/renewal-offers/sro_1/intent',
+    ]);
+    expect(headers[0]!['Idempotency-Key']).toMatch(GENERATED_KEY);
+    expect(headers[1]!['Idempotency-Key']).toBe(headers[0]!['Idempotency-Key']);
+    expect(headers[2]!['Idempotency-Key']).toBe('renew-1');
+    expect(headers[3]!['Idempotency-Key']).toBe('renew-1');
+    expect(headers[4]!['Idempotency-Key']).toBeUndefined();
+    expect(stub.calls[4]!.init.body).toBeUndefined();
+    expect(stub.responses).toHaveLength(0);
+  });
+
+  it('types the renewal quote, the started checkout, and the decline reason', () => {
+    expectTypeOf<SeasonRenewalOffer['declineReason']>().toEqualTypeOf<string | null>();
+    expectTypeOf<SeasonRenewalQuote['totalMinor']>().toEqualTypeOf<number | null>();
+    expectTypeOf<'prices_missing'>().toMatchTypeOf<NonNullable<SeasonRenewalQuote['problem']>>();
+    expectTypeOf<SeasonRenewalCheckoutStarted['payment']['url']>().toEqualTypeOf<string | null>();
+    const sdk = new SeatLayer({ secretKey: 'sk_test_abc', fetch: stubFetch([]).fetch });
+    expectTypeOf(sdk.seasons.createSeasonRenewalCheckout).returns.resolves
+      .toEqualTypeOf<SeasonRenewalCheckoutStarted>();
+    expectTypeOf(sdk.holders.createHolderRenewalCheckout).returns.resolves
+      .toEqualTypeOf<SeasonRenewalCheckoutStarted>();
+  });
+
+  it('exposes exactly 86 season operations, plus the polling helpers and the import alias', () => {
     const sdk = new SeatLayer({ secretKey: 'sk_test_abc', fetch: stubFetch([]).fetch });
     const methods = Object.getOwnPropertyNames(Object.getPrototypeOf(sdk.seasons))
       .filter((name) => name !== 'constructor');
@@ -822,7 +926,7 @@ describe('Season organizer resource', () => {
     expect(helpers.sort()).toEqual([
       'importSeasonHolders', 'waitForSeasonBooking', 'waitForSeasonLifecycle', 'waitForSeasonRenewal',
     ]);
-    expect(methods.length - helpers.length).toBe(83);
+    expect(methods.length - helpers.length).toBe(86);
   });
 
   it('types CSV exports as text and the 204 plan delete as void', () => {

@@ -1,5 +1,11 @@
 import type { HttpClient } from '../http.js';
 import type { KeyMode } from '../types.js';
+import type {
+  DeclineSeasonRenewalOfferParams,
+  SeasonRenewalCheckoutParams,
+  SeasonRenewalCheckoutStarted,
+  SeasonRenewalOffer,
+} from './seasons.js';
 
 export interface Customer {
   id: string;
@@ -144,7 +150,7 @@ export interface CreateHolderReturnParams {
 }
 
 /**
- * Season ticket holders, their customers, tickets, ticket transfers, and returns.
+ * Season ticket holders, their customers, tickets, ticket transfers, returns, and renewals.
  * `holderRef` is your own holder reference, as your imports and bookings carry
  * it; a hosted season purchase uses its order id.
  */
@@ -252,5 +258,37 @@ export class Holders {
     return this.#http.postWithHeaderReplay(`/v1/holders/${encodeURIComponent(holderRef)}/returns`, {
       body: params, idempotencyKey: options.idempotencyKey, signal: options.signal,
     });
+  }
+
+  /**
+   * Start a SeatLayer checkout that renews one of a holder's offers (`renewalOffer` on
+   * `listHolderSeasons`). Send the buyer to `payment.url`. Retried safely with one
+   * Idempotency-Key, which answers the same order.
+   */
+  createHolderRenewalCheckout(
+    holderRef: string,
+    offerId: string,
+    params: SeasonRenewalCheckoutParams,
+    options: { idempotencyKey?: string; signal?: AbortSignal } = {},
+  ): Promise<SeasonRenewalCheckoutStarted> {
+    return this.#http.postWithHeaderReplay(
+      `/v1/holders/${encodeURIComponent(holderRef)}/renewal-offers/${encodeURIComponent(offerId)}/checkout`,
+      { body: params, idempotencyKey: options.idempotencyKey, signal: options.signal },
+    );
+  }
+
+  /**
+   * Decline one of a holder's renewal offers and release its seats, optionally with the
+   * holder's reason. Declining again answers the same offer, with the first reason.
+   */
+  declineHolderRenewalOffer(
+    holderRef: string,
+    offerId: string,
+    params?: DeclineSeasonRenewalOfferParams,
+  ): Promise<{ offer: SeasonRenewalOffer }> {
+    return this.#http.post(
+      `/v1/holders/${encodeURIComponent(holderRef)}/renewal-offers/${encodeURIComponent(offerId)}/decline`,
+      { body: params },
+    );
   }
 }

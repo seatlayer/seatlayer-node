@@ -75,7 +75,7 @@ async function expectOperations(cases: OperationCase[]) {
 }
 
 describe('Holders resource', () => {
-  it('maps all 12 holder, customer, ticket, transfer, and return operations', async () => {
+  it('maps all 14 holder, customer, ticket, transfer, return, and renewal operations', async () => {
     await expectOperations([
       {
         name: 'listCustomers',
@@ -153,7 +153,70 @@ describe('Holders resource', () => {
         response: { status: 201, body: { return: { returnId: 'ret_1', state: 'pending' } } },
         returns: { return: { returnId: 'ret_1', state: 'pending' } },
       },
+      {
+        name: 'createHolderRenewalCheckout',
+        run: (sdk) => sdk.holders.createHolderRenewalCheckout('holder a/b', 'sro/1', {
+          returnUrl: 'https://tickets.example/renewed', buyerEmail: 'cara@example.com',
+          buyerName: 'Cara', provider: 'stripe',
+        }, { idempotencyKey: 'crm-renew-cara-2027' }),
+        method: 'POST', path: '/v1/holders/holder%20a%2Fb/renewal-offers/sro%2F1/checkout',
+        body: {
+          returnUrl: 'https://tickets.example/renewed', buyerEmail: 'cara@example.com',
+          buyerName: 'Cara', provider: 'stripe',
+        },
+        idempotencyKey: 'crm-renew-cara-2027',
+        response: { status: 201, body: { orderId: 'ord_1', payment: { url: 'https://pay.example/1' } } },
+        returns: { orderId: 'ord_1', payment: { url: 'https://pay.example/1' } },
+      },
+      {
+        name: 'declineHolderRenewalOffer with a reason',
+        run: (sdk) => sdk.holders.declineHolderRenewalOffer('holder a/b', 'sro/1', { reason: 'Moving away' }),
+        method: 'POST', path: '/v1/holders/holder%20a%2Fb/renewal-offers/sro%2F1/decline',
+        body: { reason: 'Moving away' },
+        response: { status: 200, body: { offer: { offerId: 'sro/1', state: 'declined', declineReason: 'Moving away' } } },
+        returns: { offer: { offerId: 'sro/1', state: 'declined', declineReason: 'Moving away' } },
+      },
     ]);
+  });
+
+  it('declines a holder offer with no body when no reason is given', async () => {
+    await expectOperations([
+      {
+        name: 'declineHolderRenewalOffer',
+        run: (sdk) => sdk.holders.declineHolderRenewalOffer('holder_1', 'sro_1'),
+        method: 'POST', path: '/v1/holders/holder_1/renewal-offers/sro_1/decline',
+      },
+    ]);
+  });
+
+  it('reuses one Idempotency-Key when a holder renewal checkout retries, but sends a decline once', async () => {
+    const stub = stubFetch([
+      { status: 503, body: { error: 'unavailable' } },
+      { status: 201, body: { orderId: 'ord_1' } },
+      { status: 429, body: { error: 'rate_limited' }, headers: { 'retry-after': '0' } },
+      { status: 201, body: { orderId: 'ord_1' } },
+      { status: 503, body: { error: 'unavailable' } },
+    ]);
+    const sdk = new SeatLayer({ secretKey: 'sk_test_abc', fetch: stub.fetch, maxRetries: 3 });
+    const params = { returnUrl: 'https://tickets.example/renewed' };
+
+    await sdk.holders.createHolderRenewalCheckout('a/b', 'sro_1', params);
+    await sdk.holders.createHolderRenewalCheckout('a/b', 'sro_1', params, { idempotencyKey: 'renew-1' });
+    await expect(sdk.holders.declineHolderRenewalOffer('a/b', 'sro_1', { reason: 'Moving away' }))
+      .rejects.toBeInstanceOf(SeatLayerError);
+
+    const headers = stub.calls.map((call) => call.init.headers as Record<string, string>);
+    expect(stub.calls.map((call) => `${call.init.method} ${new URL(call.url).pathname}`)).toEqual([
+      ...Array(4).fill('POST /v1/holders/a%2Fb/renewal-offers/sro_1/checkout'),
+      'POST /v1/holders/a%2Fb/renewal-offers/sro_1/decline',
+    ]);
+    expect(headers[0]!['Idempotency-Key']).toMatch(GENERATED_KEY);
+    expect(headers[1]!['Idempotency-Key']).toBe(headers[0]!['Idempotency-Key']);
+    expect(headers[2]!['Idempotency-Key']).toBe('renew-1');
+    expect(headers[3]!['Idempotency-Key']).toBe('renew-1');
+    expect(headers[4]!['Idempotency-Key']).toBeUndefined();
+    expect(JSON.parse(stub.calls[4]!.init.body as string)).toEqual({ reason: 'Moving away' });
+    expect(stub.responses).toHaveLength(0);
   });
 
   it('reuses one generated key when a transfer retries, and sends session revoke once', async () => {

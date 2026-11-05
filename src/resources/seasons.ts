@@ -218,6 +218,8 @@ export interface SeasonRenewalOffer {
   orderRef: string | null;
   bookingRef: string | null;
   successorContractId: string | null;
+  /** Why the holder declined, when a decline gave a reason. The first decline's reason stays. */
+  declineReason: string | null;
   commitOutcomes: Array<{
     eventKey: string;
     state: 'pending' | 'committed' | 'failed';
@@ -236,6 +238,59 @@ export interface SeasonRenewalResult {
   offer: SeasonRenewalOffer;
   location?: string;
   retryAfterSeconds?: number;
+}
+
+/** Why SeatLayer checkout cannot take a renewal now. */
+export type SeasonRenewalQuoteProblem =
+  | 'offer_not_open' | 'checkout_mode_not_seatlayer' | 'sales_ended' | 'plan_not_published'
+  | 'seats_changed' | 'prices_missing' | 'unsupported_currency' | 'gateway_not_connected'
+  | 'gateway_currency_mismatch';
+
+/** What renewing an offer costs, priced as the SeatLayer checkout will charge it. */
+export interface SeasonRenewalQuote {
+  offerId: string;
+  state: string;
+  /** Null when the seats cannot be priced (`prices_missing`, `seats_changed`). */
+  totalMinor: number | null;
+  currency: string;
+  /** One line per seat, for the whole package. */
+  lines: Array<{
+    label: string; category: string | null; priceTypeKey: string; amountMinor: number;
+    [key: string]: unknown;
+  }>;
+  performances: Array<{ eventKey: string; name: string; startsAt: number | null; [key: string]: unknown }>;
+  /** Null when SeatLayer checkout can take the renewal now; otherwise why not. */
+  problem: SeasonRenewalQuoteProblem | null;
+  [key: string]: unknown;
+}
+
+export interface SeasonRenewalCheckoutParams {
+  /**
+   * Where the buyer comes back to, on one of the organization's allowed domains.
+   * `seatlayer_checkout=success` or `cancelled` is added.
+   */
+  returnUrl: string;
+  /** Where the tickets go when no email is on file for the holder; the one on file wins. */
+  buyerEmail?: string;
+  buyerName?: string;
+  /** Which connected gateway to pay with, when the organization has more than one. */
+  provider?: string;
+}
+
+/** An order waiting for payment: send the buyer to `payment.url`; paying renews the offer. */
+export interface SeasonRenewalCheckoutStarted {
+  orderId: string;
+  totalMinor: number;
+  currency: string;
+  /** When the payment window closes; the offer is held for this order until then. */
+  expiresAt: number;
+  payment: { url: string | null; [key: string]: unknown };
+  [key: string]: unknown;
+}
+
+export interface DeclineSeasonRenewalOfferParams {
+  /** Why the holder declined, 1 to 200 characters, kept on the offer as `declineReason`. */
+  reason?: string;
 }
 
 export interface SeasonBuyerRehearsalResult {
@@ -1031,9 +1086,14 @@ export class Seasons {
     );
   }
 
-  declineSeasonRenewalOffer(seasonKey: string, offerId: string): Promise<SeasonRenewalResult> {
+  /** Decline an offer and release its seats at once, optionally with the holder's reason. */
+  declineSeasonRenewalOffer(
+    seasonKey: string,
+    offerId: string,
+    params: DeclineSeasonRenewalOfferParams = {},
+  ): Promise<SeasonRenewalResult> {
     return this.#renewal(
-      `/v1/seasons/${pathPart(seasonKey)}/renewal-offers/${pathPart(offerId)}/decline`, {},
+      `/v1/seasons/${pathPart(seasonKey)}/renewal-offers/${pathPart(offerId)}/decline`, params,
     );
   }
 
@@ -1420,6 +1480,35 @@ export class Seasons {
   /** Send one holder a new renewal invitation. Sent once: an unknown outcome is not retried. */
   resendSeasonRenewalOffer(seasonKey: string, offerId: string): Promise<{ ok: true; [key: string]: unknown }> {
     return this.#http.post(`/v1/seasons/${pathPart(seasonKey)}/renewal-offers/${pathPart(offerId)}/resend`);
+  }
+
+  /** What renewing an offer costs, and whether SeatLayer checkout can take it now (`problem` is null). */
+  retrieveSeasonRenewalQuote(seasonKey: string, offerId: string): Promise<SeasonRenewalQuote> {
+    return this.#http.get(`/v1/seasons/${pathPart(seasonKey)}/renewal-offers/${pathPart(offerId)}/quote`);
+  }
+
+  /**
+   * Record that the holder means to renew, for a renewal taken by phone or at the
+   * box office, so your own checkout can commit the offer. A repeat answers the same offer.
+   */
+  createSeasonRenewalIntent(seasonKey: string, offerId: string): Promise<SeasonRenewalResult> {
+    return this.#renewal(`/v1/seasons/${pathPart(seasonKey)}/renewal-offers/${pathPart(offerId)}/intent`);
+  }
+
+  /**
+   * Start a SeatLayer checkout that renews an offer, with no hosted page. Send the
+   * buyer to `payment.url`. Retried safely with one Idempotency-Key, which answers the same order.
+   */
+  createSeasonRenewalCheckout(
+    seasonKey: string,
+    offerId: string,
+    params: SeasonRenewalCheckoutParams,
+    options: { idempotencyKey?: string; signal?: AbortSignal } = {},
+  ): Promise<SeasonRenewalCheckoutStarted> {
+    return this.#http.postWithHeaderReplay(
+      `/v1/seasons/${pathPart(seasonKey)}/renewal-offers/${pathPart(offerId)}/checkout`,
+      { body: params, idempotencyKey: options.idempotencyKey, signal: options.signal },
+    );
   }
 
   /** Retrieve Season money, seats, holders and renewals as totals. */

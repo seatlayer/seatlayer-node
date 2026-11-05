@@ -180,6 +180,11 @@ export {
   type SeasonOutboxOccurrence,
   type SeasonAuditEntry,
   type SeasonRenewalResult,
+  type SeasonRenewalQuote,
+  type SeasonRenewalQuoteProblem,
+  type SeasonRenewalCheckoutParams,
+  type SeasonRenewalCheckoutStarted,
+  type DeclineSeasonRenewalOfferParams,
   type SeasonValidation,
   type WaitForSeasonLifecycleOptions,
 } from './resources/seasons.js';

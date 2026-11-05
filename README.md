@@ -304,9 +304,34 @@ const terminal = await seatlayer.seasons.waitForSeasonRenewal(seasonKey, accepte
 if (terminal.offer.state === 'partial_terminal') reconcile(terminal.offer.commitOutcomes);
 ```
 
-Renewal intent requires a browser session bound to the exact `buyerRef`/holder.
+Renewal intent normally comes from a browser session bound to the exact `buyerRef`/holder. For
+a renewal taken by phone or at the box office, record it with your secret key first:
+`createSeasonRenewalIntent(seasonKey, offerId)`, then take the payment and commit. A decline
+can carry the holder's reason: `declineSeasonRenewalOffer(seasonKey, offerId, { reason })`.
 Extension is explicit and pre-lapse; no default extension is invented while
 organizer bounds and permission policy remain an owner-open rollout decision.
+
+### Renewal with SeatLayer checkout
+
+When SeatLayer takes the season's payments, renew a holder with no hosted page: read the price,
+start a checkout, and send the holder to pay. Paying renews the offer on every date.
+
+```ts
+const quote = await seatlayer.seasons.retrieveSeasonRenewalQuote(seasonKey, offerId);
+if (quote.problem === null) {
+  const started = await seatlayer.seasons.createSeasonRenewalCheckout(
+    seasonKey,
+    offerId,
+    { returnUrl: 'https://tickets.yourclub.example/renewed' },
+    { idempotencyKey: `renew-${offerId}` },
+  );
+  redirect(started.payment.url!);
+}
+```
+
+For one holder, `holders.createHolderRenewalCheckout(holderRef, offerId, params)` and
+`holders.declineHolderRenewalOffer(holderRef, offerId, { reason })` do the same for an offer of
+theirs.
 
 ## Private allocations
 
@@ -469,17 +494,18 @@ requests.
 
 ## Reliability
 
-**Retries and idempotency.** Reads retry 408, 429 and 5xx responses with backoff. Thirty-eight
+**Retries and idempotency.** Reads retry 408, 429 and 5xx responses with backoff. Forty
 mutations use exact header replay: `charts.create`, `charts.copy`, `templates.instantiateTemplate`,
-`events.create`, `workspaces.create`, `performanceGroups.createPerformanceGroup`; 24 Season
+`events.create`, `workspaces.create`, `performanceGroups.createPerformanceGroup`; 25 Season
 operations (`createSeason`, `updateSeason`, `deleteSeason`, `publishSeason`, `createSeasonPlan`,
 `updateSeasonPlan`, `deleteSeasonPlan`, `duplicateSeasonToLive`, `createSeasonHolderImport`,
 `createSeasonHolderImportFromSeason`, `createSeasonRenewalOffers`, `createSeasonAmendment`,
 `createSeasonPerformances`, `attachSeasonPerformances`, `deleteSeasonPerformance`,
 `markSeasonPerformancePast`, `attachSeasonPlanPerformance`, `deleteSeasonPlanPerformance`,
 `replaceSeasonPackagePrices`, `createSeasonCheckoutTest`, `refundSeasonOrder`, `cancelSeasonOrder`,
-`cancelSeasonOrderDate`, and `refundSeasonPerformance`); `holders.updateHolder`, `holders.createHolderTransfer`, and
-`holders.createHolderReturn`; `orders.refundEventOrder` and `orders.cancelEventOrder`; and
+`cancelSeasonOrderDate`, `refundSeasonPerformance`, and `createSeasonRenewalCheckout`);
+`holders.updateHolder`, `holders.createHolderTransfer`, `holders.createHolderReturn`, and
+`holders.createHolderRenewalCheckout`; `orders.refundEventOrder` and `orders.cancelEventOrder`; and
 `eventSeries.createEventSeries`, `eventSeries.addEventSeriesDates`, and
 `eventSeries.updateEventSeries`. The SDK generates one
 `Idempotency-Key` and reuses it for every attempt. All remaining SDK mutations are sent once; some
@@ -493,7 +519,7 @@ before trying again.
 ```ts
 new SeatLayer({
   secretKey: process.env.SEATLAYER_SECRET_KEY!,
-  maxRetries: 3,      // retries for reads and the 38 exact-header-replay mutations
+  maxRetries: 3,      // retries for reads and the 40 exact-header-replay mutations
   timeoutMs: 30_000,  // per attempt
 });
 ```
@@ -523,14 +549,14 @@ string.
 | `events` | `list` `listAll` `create` `retrieve` `retrieveConfigurationBinding` `updateConfigurationBinding` `update` `delete` `updatePoster` `deletePoster` `updateChart` `close` `reopen` `archive` `retrieveHoldTtl` `updateHoldTtl` `listTicketReleases` `updateTicketReleases` `closeTicketRelease` `retrieveReport` `retrieveLog` `retrieveEventBuyerCheckout` `replaceEventBuyerCheckout` `retrieveEventPaymentGateway` `replaceEventPaymentGateway` `retrieveEventSalesReadiness` `preflightEventSales` `transitionEventSales` `retrieveEventBookingFee` `replaceEventBookingFee` `listEventDiscountCodes` `createEventDiscountCode` `updateEventDiscountCode` `endEventDiscountCode` `deleteEventDiscountCode` |
 | `eventSeries` | `createEventSeries` `listEventSeries` `retrieveEventSeries` `addEventSeriesDates` `updateEventSeries` |
 | `orders` | `listOrders` `retrieveOrder` `listOrderTickets` `listEventOrders` `retrieveEventOrder` `exportEventOrdersCsv` `refundEventOrder` `cancelEventOrder` `resendEventOrderTickets` |
-| `holders` | `listCustomers` `retrieveHolder` `updateHolder` `revokeHolderSessions` `listHolderSeasons` `listHolderTickets` `retrieveHolderTicket` `createHolderTransfer` `listHolderTransfers` `cancelHolderTransfer` `acceptHolderTransfer` `createHolderReturn` |
+| `holders` | `listCustomers` `retrieveHolder` `updateHolder` `revokeHolderSessions` `listHolderSeasons` `listHolderTickets` `retrieveHolderTicket` `createHolderTransfer` `listHolderTransfers` `cancelHolderTransfer` `acceptHolderTransfer` `createHolderReturn` `createHolderRenewalCheckout` `declineHolderRenewalOffer` |
 | `inventory` | `hold` `holdBestAvailable` `bookBestAvailable` `extendHold` `retrieveHold` `release` `book` `boxOfficeBook` `unbook` `block` `unblock` `unblockAll` `retrieveAvailability` `updateAvailability` `listBookings` `retrieveBooking` `listInventoryBookings` `retrieveInventoryBooking` |
 | `channels` | `listChannels` `createChannel` `updateChannel` `updateChannelAssignments` `listChannelAllocation` `retrieveChannelAccessPreview` `pauseChannel` `unpauseChannel` `archiveChannel` `retrieveChannelReport` `createBuyerAccessSession` `listBuyerAccessSessions` `revokeBuyerAccessSession` `createAccessLink` `listAccessLinks` `rotateAccessLink` `revokeAccessLink` |
 | `sessions` | `createManageSession` `revokeManageSession` `createDesignerSession` `revokeDesignerSession` |
 | `webhooks` | `list` `create` `update` `delete` `listDeliveries` |
 | `workspaces` | `list` `create` `retrieve` `update` |
 | `performanceGroups` | `listPerformanceGroups` `createPerformanceGroup` `retrievePerformanceGroup` `deletePerformanceGroup` `activatePerformanceGroup` `closePerformanceGroup` `retrievePerformanceGroupLifecycle` `createPerformanceGroupBuyerAccessSession` `listPerformanceGroupBuyerAccessSessions` `revokePerformanceGroupBuyerAccessSession` `retrievePerformanceGroupHold` `bookPerformanceGroupHold` `retrievePerformanceGroupBooking` |
-| `seasons` | 83 organizer operations for catalogue and Plan lifecycle, performances and package prices (with price types), sales windows, buyer access and booking, checkout tests, holder imports and the holder list, season orders, renewals and hosted renewal links, occurrence amendments (postpone, cancel) and inventory returns, bulk refunds of a cancelled date and the jobs that run them, sales and seat reports, CSV exports, audit, outbox, and support export, plus polling helpers |
+| `seasons` | 86 organizer operations for catalogue and Plan lifecycle, performances and package prices (with price types), sales windows, buyer access and booking, checkout tests, holder imports and the holder list, season orders, renewals and hosted renewal links, renewal quotes and checkouts, occurrence amendments (postpone, cancel) and inventory returns, bulk refunds of a cancelled date and the jobs that run them, sales and seat reports, CSV exports, audit, outbox, and support export, plus polling helpers |
 
 Full reference: [SeatLayer Server API](https://docs.seatlayer.io/server-api/events/)
 
