@@ -1,0 +1,173 @@
+import type { HttpClient } from '../http.js';
+import type { KeyMode } from '../types.js';
+
+/** A repeat rule. Dates and times are local to the series time zone. */
+export interface EventSeriesSchedule {
+  rule: 'none' | 'daily' | 'weekly' | 'biweekly' | 'dates';
+  from?: string;
+  until?: string;
+  count?: number;
+  times: string[];
+  skip?: string[];
+  dates?: string[];
+}
+
+export interface EventSeriesJobSummary {
+  jobId: string;
+  state: string;
+  total: number;
+  done: number;
+  failed: number;
+  [key: string]: unknown;
+}
+
+export interface EventSeries {
+  seriesKey: string;
+  name: string;
+  chartKey: string;
+  timezone: string;
+  state: 'creating' | 'ready' | 'partial' | 'failed';
+  dateCount: number;
+  firstEventKey: string | null;
+  job: EventSeriesJobSummary | null;
+  mode: KeyMode;
+  createdAt: number;
+  updatedAt: number;
+  [key: string]: unknown;
+}
+
+export interface CreateEventSeriesParams {
+  name: string;
+  chartKey: string;
+  schedule: EventSeriesSchedule;
+  timezone?: string;
+  venue?: string;
+  durationMinutes?: number;
+  /** Plan the dates without creating anything. */
+  dryRun?: boolean;
+}
+
+export interface EventSeriesCreated {
+  series: EventSeries;
+  jobId: string;
+  [key: string]: unknown;
+}
+
+export interface EventSeriesListOptions {
+  /** Page size. Defaults to 50 and is capped at 100. */
+  limit?: number;
+  cursor?: string;
+}
+
+export interface EventSeriesPage {
+  series: EventSeries[];
+  /** Absent once the list is exhausted. */
+  nextCursor?: string;
+  [key: string]: unknown;
+}
+
+export interface EventSeriesDetail {
+  series: EventSeries;
+  events: Array<{
+    key: string;
+    name: string;
+    startsAt: number | null;
+    seriesKey: string | null;
+    [key: string]: unknown;
+  }>;
+  job: (EventSeriesJobSummary & {
+    failedDates: Array<{ moment: string; error: string | null; [key: string]: unknown }>;
+  }) | null;
+  [key: string]: unknown;
+}
+
+/** Add dates from another repeat rule, or from an explicit list. */
+export type AddEventSeriesDatesParams = { schedule: EventSeriesSchedule } | { dates: string[] };
+
+export interface EventSeriesDatesAdded {
+  jobId: string;
+  added: number;
+  [key: string]: unknown;
+}
+
+export interface UpdateEventSeriesParams {
+  name?: string;
+  prices?: {
+    categories: Array<{
+      key: string;
+      price?: number | null;
+      tiers?: Array<{ id: string; price: number }>;
+    }>;
+  };
+  sales?: 'on' | 'off';
+}
+
+export interface EventSeriesUpdated {
+  series: EventSeries;
+  jobId: string | null;
+  job: (EventSeriesJobSummary & { skipped: number }) | null;
+  [key: string]: unknown;
+}
+
+/**
+ * Event series: many dated Events made from one chart and a repeat rule.
+ * `seriesKey` is the key the API returns as `series.seriesKey`.
+ */
+export class EventSeriesResource {
+  #http: HttpClient;
+
+  constructor(http: HttpClient) {
+    this.#http = http;
+  }
+
+  /**
+   * Plan an event series from a schedule (`dryRun`), or create its dates as a
+   * background job. Retried safely with one Idempotency-Key.
+   */
+  createEventSeries(
+    params: CreateEventSeriesParams,
+    options: { idempotencyKey?: string; signal?: AbortSignal } = {},
+  ): Promise<EventSeriesCreated> {
+    return this.#http.postWithHeaderReplay('/v1/event-series', {
+      body: params, idempotencyKey: options.idempotencyKey, signal: options.signal,
+    });
+  }
+
+  /** One page of event series. Pass `cursor` from the previous page's `nextCursor`. */
+  listEventSeries(options: EventSeriesListOptions = {}): Promise<EventSeriesPage> {
+    return this.#http.get('/v1/event-series', { query: {
+      limit: options.limit,
+      cursor: options.cursor,
+    } });
+  }
+
+  /** Retrieve an event series, its dates and its current job. */
+  retrieveEventSeries(seriesKey: string): Promise<EventSeriesDetail> {
+    return this.#http.get(`/v1/event-series/${encodeURIComponent(seriesKey)}`);
+  }
+
+  /** Add dates to a series, copied from its first date. Retried safely with one Idempotency-Key. */
+  addEventSeriesDates(
+    seriesKey: string,
+    params: AddEventSeriesDatesParams,
+    options: { idempotencyKey?: string; signal?: AbortSignal } = {},
+  ): Promise<EventSeriesDatesAdded> {
+    return this.#http.postWithHeaderReplay(`/v1/event-series/${encodeURIComponent(seriesKey)}/dates`, {
+      body: params, idempotencyKey: options.idempotencyKey, signal: options.signal,
+    });
+  }
+
+  /**
+   * Change the name, prices or sales of every upcoming date in a series.
+   * Retried safely with one Idempotency-Key.
+   */
+  updateEventSeries(
+    seriesKey: string,
+    params: UpdateEventSeriesParams,
+    options: { idempotencyKey?: string; signal?: AbortSignal } = {},
+  ): Promise<EventSeriesUpdated> {
+    return this.#http.mutationWithHeaderReplay('PATCH', `/v1/event-series/${encodeURIComponent(seriesKey)}`, {
+      body: params, idempotencyKey: options.idempotencyKey, signal: options.signal,
+    });
+  }
+}

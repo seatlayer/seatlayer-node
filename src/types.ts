@@ -549,7 +549,17 @@ export type WebhookEventName =
   | 'season.renewal.lapsed'
   | 'season.renewal.released'
   | 'season.operation.partial_terminal'
-  | 'season.amendment.applied';
+  | 'season.amendment.applied'
+  | 'season.ticket.transfer_sent'
+  | 'season.ticket.transferred'
+  | 'season.ticket.transfer_cancelled'
+  | 'series.created'
+  | 'series.dates_added'
+  | 'order.paid'
+  | 'order.refunded'
+  | 'order.cancelled'
+  | 'customer.created'
+  | 'customer.email_changed';
 
 export interface Webhook {
   id: string;

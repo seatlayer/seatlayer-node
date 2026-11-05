@@ -1,4 +1,6 @@
 import type { HttpClient, RequestOptions } from '../http.js';
+import type { EventHostingRegion } from '../types.js';
+import type { CancelOrderParams, RefundOrderParams, ResendOrderTicketsParams } from './orders.js';
 
 export type SeasonStructureState = 'draft' | 'active' | 'closing' | 'closed' | 'archived';
 export type SeasonSalesState = 'closed' | 'open' | 'paused' | 'ended';
@@ -289,6 +291,342 @@ export interface SeasonOutboxOccurrence {
 
 export interface SeasonAuditEntry {
   id: number; action: string; actorKind: string; details: unknown; at: number;
+}
+
+export interface SeasonHolderImportFromSeason {
+  sourceSeasonId: string;
+  successorPlanActivationId: string;
+  dryRun: boolean;
+  holders: number;
+  acceptedCount: number;
+  alreadyImported: number;
+  rejectedCount: number;
+  withEmail: number;
+  hosted: number;
+  integrator: number;
+  excluded: {
+    refunded: number; rehearsal: number; tooManySeats: number; unusableRef: number;
+    [key: string]: unknown;
+  };
+  importIds: string[];
+  rejected: Array<{ holderRef: string; labels: string[]; errorCode: string | null; [key: string]: unknown }>;
+  preview: Array<{
+    holderRef: string; holderName: string | null; hasEmail: boolean; labels: string[];
+    [key: string]: unknown;
+  }>;
+  [key: string]: unknown;
+}
+
+/** A package (Plan) as the performance views show it. */
+export interface SeasonPackageSummary {
+  planKey: string;
+  name: string | null;
+  published: boolean;
+  performanceCount: number;
+  [key: string]: unknown;
+}
+
+export interface SeasonPerformance {
+  eventKey: string;
+  name: string;
+  startsAt: number | null;
+  endsAt: number | null;
+  timezone: string | null;
+  venue: string | null;
+  status: string;
+  salesState: string;
+  mode: 'live' | 'test';
+  past: boolean;
+  packages: Array<{ planKey: string; name: string | null; published: boolean; [key: string]: unknown }>;
+  [key: string]: unknown;
+}
+
+export interface SeasonPerformanceList {
+  seasonKey: string;
+  performances: SeasonPerformance[];
+  packages: SeasonPackageSummary[];
+  [key: string]: unknown;
+}
+
+export interface SeasonPerformanceCreateResult extends SeasonPerformanceList {
+  created: Array<{ eventKey: string; name: string; startsAt: number; [key: string]: unknown }>;
+}
+
+export interface CreateSeasonPerformancesParams {
+  /** Title for each performance; the API fills in the date. */
+  titlePattern: string;
+  firstStartsAt?: number;
+  timezone: string;
+  repeat: 'none' | 'daily' | 'weekly' | 'biweekly' | 'dates';
+  count?: number;
+  /** Start times in epoch milliseconds, for `repeat: 'dates'`. */
+  dates?: number[];
+  venue?: string | null;
+  durationMinutes?: number | null;
+  region?: EventHostingRegion;
+  attachToPlanKeys?: string[];
+}
+
+export interface SeasonPackageResult extends SeasonPerformanceList {
+  package: SeasonPackageSummary;
+}
+
+export interface SeasonPublishResult {
+  season: {
+    key: string; name: string; structureState: SeasonStructureState; salesState: SeasonSalesState;
+    revision: number; [key: string]: unknown;
+  };
+  packages: Array<{
+    planKey: string; name: string; published: true; activationId: string | null;
+    [key: string]: unknown;
+  }>;
+  [key: string]: unknown;
+}
+
+export interface SeasonCheckoutTest {
+  id: string;
+  status: 'passed' | 'failed';
+  startedAt: number;
+  finishedAt: number;
+  planKey: string;
+  seats: string[];
+  steps: Array<{
+    step: 'session' | 'availability' | 'hold' | 'release';
+    ok: boolean; durationMs: number; message?: string; detail?: string;
+    [key: string]: unknown;
+  }>;
+  [key: string]: unknown;
+}
+
+export interface SeasonPackagePrice {
+  categoryKey: string;
+  /** Minor units. */
+  unitPrice: number;
+  [key: string]: unknown;
+}
+
+export interface SeasonPackagePrices {
+  planKey: string;
+  currency: string;
+  prices: SeasonPackagePrice[];
+  [key: string]: unknown;
+}
+
+export interface SeasonPriceList {
+  seasonKey: string;
+  currency: string;
+  packages: Array<{ planKey: string; name: string | null; prices: SeasonPackagePrice[]; [key: string]: unknown }>;
+  [key: string]: unknown;
+}
+
+/** Background work started when a date is added to or removed from a published package. */
+export interface SeasonDateJob {
+  jobId: string;
+  kind: 'date_added' | 'date_removed';
+  state: 'planning' | 'running' | 'completed' | 'failed' | 'cancelled';
+  total: number;
+  done: number;
+  skipped: number;
+  failed: number;
+  pending: number;
+  lastError: string | null;
+  createdAt: number;
+  updatedAt: number;
+  completedAt: number | null;
+  [key: string]: unknown;
+}
+
+export interface SeasonStoppedOrder {
+  orderId: string | null;
+  bookingRef: string;
+  holderRef: string | null;
+  reason: string;
+  [key: string]: unknown;
+}
+
+export interface SeasonPlanPerformanceAttachResult extends SeasonPerformanceList {
+  extended: number;
+  conflicts: Array<{
+    label: string; bookingRef: string; holderRef?: string;
+    reason: 'seat_taken' | 'seat_blocked' | 'seat_missing';
+    [key: string]: unknown;
+  }>;
+  ticketsIssued: number;
+  stopped: SeasonStoppedOrder[];
+  stoppedTruncated?: boolean;
+  job: SeasonDateJob | null;
+}
+
+export interface SeasonPlanPerformanceRemoveResult extends SeasonPerformanceList {
+  released: number;
+  stopped: SeasonStoppedOrder[];
+  stoppedTruncated?: boolean;
+  job: SeasonDateJob | null;
+}
+
+/** The booking or renewal offer the returned seats came from. */
+export type SeasonOccurrenceInventorySource = { bookingActionId: string } | { renewalOfferId: string };
+
+export interface SeasonOccurrenceInventoryAction {
+  actionId: string;
+  returnActionId: string;
+  eventKey: string;
+  planActivationId: string;
+  state: 'returned' | 'reclaimed';
+  labels: string[];
+  [key: string]: unknown;
+}
+
+export interface SeasonHolder {
+  id: string;
+  kind: 'hosted' | 'integrator' | 'imported';
+  bookingRef: string | null;
+  orderId: string | null;
+  orderNumber: string | null;
+  holderName: string | null;
+  holderEmail: string | null;
+  holderRef: string | null;
+  labels: string[];
+  packageName: string | null;
+  packageId: string | null;
+  dates: Array<{ eventKey: string; state: 'active' | 'cancelled' | 'problem'; [key: string]: unknown }>;
+  datesTotal: number;
+  datesActive: number;
+  datesCancelled: number;
+  paid: { amountMinor: number; currency: string; refundedMinor: number; [key: string]: unknown } | null;
+  soldAtCounter: boolean;
+  orderStatus: string | null;
+  status: 'active' | 'partly_cancelled' | 'cancelled' | 'needs_review'
+    | 'renewal_open' | 'renewed' | 'declined' | 'lapsed';
+  renewal: { offerId: string; state: string; deadlineAt: number | null; [key: string]: unknown } | null;
+  boughtAt: number | null;
+  [key: string]: unknown;
+}
+
+export interface SeasonHolderPage {
+  holders: SeasonHolder[];
+  nextCursor: string | null;
+  totals?: { holders: number; active: number; cancelled: number; imported: number; [key: string]: unknown };
+  [key: string]: unknown;
+}
+
+export interface SeasonHolderFilter {
+  /** Search by holder name, email, reference, order number or seat. */
+  q?: string;
+  status?: 'active' | 'cancelled' | 'renewal';
+}
+
+export interface SeasonHolderListOptions extends SeasonHolderFilter {
+  cursor?: string;
+  /** Page size. Defaults to 50 and is capped at 100. */
+  limit?: number;
+}
+
+export interface SeasonOrderRefund {
+  orderId: string;
+  refundId: string | null;
+  amountMinor: number | null;
+  currency: string;
+  state: 'succeeded' | 'pending' | 'unknown' | 'cancelled';
+  [key: string]: unknown;
+}
+
+export interface SeasonOrderCancelReceipt {
+  orderId: string;
+  displayRef: string;
+  status: 'refunded';
+  currency: string;
+  settledOutsideMinor: number;
+  released: string[];
+  seatsReleased: boolean;
+  emailQueued: boolean;
+  cancelledAt: number;
+  [key: string]: unknown;
+}
+
+export interface SeasonOrderDateCancel {
+  eventKey: string;
+  ticketsVoided: number;
+  labels: string[];
+  state: 'returned' | 'pending';
+  [key: string]: unknown;
+}
+
+export interface SeasonHostedRenewals {
+  checkoutMode: 'seatlayer' | 'server' | null;
+  transferCutoffHours?: number | null;
+  readiness: { ready: boolean; problem: string | null; [key: string]: unknown };
+  holdersWithoutEmail: number;
+  offers: Array<{
+    offerId: string;
+    holderName: string | null;
+    holderEmail: string | null;
+    linkActiveSince: number | null;
+    paymentActive: boolean;
+    notices: {
+      invitedAt: number | null; lastReminderAt: number | null; nextNoticeAt: number | null;
+      nextNoticeKind: string | null; problem: string | null; [key: string]: unknown;
+    };
+    [key: string]: unknown;
+  }>;
+  [key: string]: unknown;
+}
+
+export interface SeasonSeatCounts {
+  sold: number;
+  byPackage: Array<{
+    packageId: string | null; packageName: string | null; seats: number; holders: number;
+    [key: string]: unknown;
+  }>;
+  byDate: Array<{
+    eventKey: string; name: string | null; startsAt: number | null; timezone: string | null; seats: number;
+    byPackage: Array<{ packageId: string | null; seats: number; [key: string]: unknown }>;
+    [key: string]: unknown;
+  }>;
+  [key: string]: unknown;
+}
+
+export interface SeasonSalesReport {
+  season: {
+    key: string; name: string; currency: string; mode: 'live' | 'test';
+    checkoutMode: string | null; timezone: string | null; [key: string]: unknown;
+  };
+  generatedAt: number;
+  ownCheckout: boolean;
+  money: {
+    rows: Array<{
+      packageId: string | null; packageName: string | null; channel: 'online' | 'box_office';
+      currency: string; orders: number; refundedOrders: number; seats: number; grossMinor: number;
+      discountMinor: number; refundedMinor: number; netMinor: number; [key: string]: unknown;
+    }>;
+    [key: string]: unknown;
+  } | null;
+  seats: SeasonSeatCounts | null;
+  holders: {
+    total: number; active: number; cancelled: number; imported: number; importedRenewed: number;
+    soldThroughSeatLayer: number; soldThroughYourCheckout: number;
+    byStatus: { all: number; active: number; cancelled: number; renewal: number; [key: string]: unknown };
+    [key: string]: unknown;
+  } | null;
+  renewals: {
+    offered: number; renewed: number; declined: number; lapsed: number; open: number;
+    needsReview: number; rate: number | null; [key: string]: unknown;
+  } | null;
+  downloadLimit: number;
+  /** Sections the report could not compute this time; each is null above. */
+  unavailable: Array<'seats' | 'holders' | 'renewals'>;
+  [key: string]: unknown;
+}
+
+export interface SeasonSeatsReport {
+  packages: Array<{
+    packageId: string | null; packageName: string; datesLeft: number;
+    state: 'ok' | 'no_dates_left' | 'chart_unavailable' | 'dates_differ';
+    freeEveryDate: number | null; notEveryDate: number | null; renewalHeld: number | null;
+    [key: string]: unknown;
+  }>;
+  dates: Array<{ eventKey: string; free: number; [key: string]: unknown }>;
+  [key: string]: unknown;
 }
 
 export interface WaitForSeasonLifecycleOptions {
@@ -663,6 +1001,352 @@ export class Seasons {
     requestId: string; export: Record<string, unknown>;
   }> {
     return this.#http.get(`/v1/seasons/${pathPart(seasonKey)}/export`);
+  }
+
+  /**
+   * Dry-run or commit renewal rights derived from a previous season's holders.
+   * Retried safely with one Idempotency-Key.
+   */
+  createSeasonHolderImportFromSeason(
+    seasonKey: string,
+    params: { sourceSeasonId: string; successorPlanActivationId: string; dryRun?: boolean },
+    options: { idempotencyKey?: string; signal?: AbortSignal } = {},
+  ): Promise<{ import: SeasonHolderImportFromSeason }> {
+    return this.#http.postWithHeaderReplay(`/v1/seasons/${pathPart(seasonKey)}/imports/from-season`, {
+      body: params, idempotencyKey: options.idempotencyKey, signal: options.signal,
+    });
+  }
+
+  /** List a Season's performances and package membership, in every lifecycle state. */
+  listSeasonPerformances(seasonKey: string): Promise<SeasonPerformanceList> {
+    return this.#http.get(`/v1/seasons/${pathPart(seasonKey)}/performances`);
+  }
+
+  /** Create performances inside a draft Season from a repeat rule. Retried safely with one Idempotency-Key. */
+  createSeasonPerformances(
+    seasonKey: string,
+    params: CreateSeasonPerformancesParams,
+    options: { idempotencyKey?: string; signal?: AbortSignal } = {},
+  ): Promise<SeasonPerformanceCreateResult> {
+    return this.#http.postWithHeaderReplay(`/v1/seasons/${pathPart(seasonKey)}/performances`, {
+      body: params, idempotencyKey: options.idempotencyKey, signal: options.signal,
+    });
+  }
+
+  /** Attach existing Events to a draft Season and its packages. Retried safely with one Idempotency-Key. */
+  attachSeasonPerformances(
+    seasonKey: string,
+    params: { eventKeys: string[]; attachToPlanKeys?: string[] },
+    options: { idempotencyKey?: string; signal?: AbortSignal } = {},
+  ): Promise<SeasonPerformanceList> {
+    return this.#http.postWithHeaderReplay(`/v1/seasons/${pathPart(seasonKey)}/performances/attach`, {
+      body: params, idempotencyKey: options.idempotencyKey, signal: options.signal,
+    });
+  }
+
+  /** Remove a performance from a draft Season and every package. Retried safely with one Idempotency-Key. */
+  deleteSeasonPerformance(
+    seasonKey: string,
+    eventKey: string,
+    options: { idempotencyKey?: string; signal?: AbortSignal } = {},
+  ): Promise<SeasonPerformanceList> {
+    return this.#http.mutationWithHeaderReplay(
+      'DELETE',
+      `/v1/seasons/${pathPart(seasonKey)}/performances/${pathPart(eventKey)}`,
+      { idempotencyKey: options.idempotencyKey, signal: options.signal },
+    );
+  }
+
+  /** Rename a draft package or change the performances it covers. Retried safely with one Idempotency-Key. */
+  updateSeasonPlan(
+    seasonKey: string,
+    planKey: string,
+    params: { name?: string; eventKeys?: string[] },
+    options: { idempotencyKey?: string; signal?: AbortSignal } = {},
+  ): Promise<SeasonPackageResult> {
+    return this.#http.mutationWithHeaderReplay(
+      'PATCH',
+      `/v1/seasons/${pathPart(seasonKey)}/plans/${pathPart(planKey)}`,
+      { body: params, idempotencyKey: options.idempotencyKey, signal: options.signal },
+    );
+  }
+
+  /**
+   * Delete a draft package that is not the Season's last one. Resolves with
+   * nothing (204). Retried safely with one Idempotency-Key.
+   */
+  deleteSeasonPlan(
+    seasonKey: string,
+    planKey: string,
+    options: { idempotencyKey?: string; signal?: AbortSignal } = {},
+  ): Promise<void> {
+    return this.#http.mutationWithHeaderReplay(
+      'DELETE',
+      `/v1/seasons/${pathPart(seasonKey)}/plans/${pathPart(planKey)}`,
+      { idempotencyKey: options.idempotencyKey, signal: options.signal },
+    );
+  }
+
+  /**
+   * Activate the Season structure and publish every draft package in one call.
+   * Retried safely with one Idempotency-Key.
+   */
+  publishSeason(
+    seasonKey: string,
+    options: { idempotencyKey?: string; signal?: AbortSignal } = {},
+  ): Promise<SeasonPublishResult> {
+    return this.#http.postWithHeaderReplay(`/v1/seasons/${pathPart(seasonKey)}/publish`, {
+      idempotencyKey: options.idempotencyKey, signal: options.signal,
+    });
+  }
+
+  /**
+   * Run a server-side hold and release to prove the Season buyer path.
+   * Retried safely with one Idempotency-Key.
+   */
+  createSeasonCheckoutTest(
+    seasonKey: string,
+    params?: { planKey?: string; quantity?: number },
+    options: { idempotencyKey?: string; signal?: AbortSignal } = {},
+  ): Promise<{ test: SeasonCheckoutTest }> {
+    return this.#http.postWithHeaderReplay(`/v1/seasons/${pathPart(seasonKey)}/checkout-tests`, {
+      body: params, idempotencyKey: options.idempotencyKey, signal: options.signal,
+    });
+  }
+
+  /** List recent Season checkout tests, newest first. */
+  listSeasonCheckoutTests(seasonKey: string): Promise<{ tests: SeasonCheckoutTest[] }> {
+    return this.#http.get(`/v1/seasons/${pathPart(seasonKey)}/checkout-tests`);
+  }
+
+  /**
+   * Replace a package's price table, per chart category, in minor units.
+   * Retried safely with one Idempotency-Key.
+   */
+  replaceSeasonPackagePrices(
+    seasonKey: string,
+    planKey: string,
+    params: { prices: Array<{ categoryKey: string; unitPrice: number }>; currency?: string },
+    options: { idempotencyKey?: string; signal?: AbortSignal } = {},
+  ): Promise<SeasonPackagePrices> {
+    return this.#http.mutationWithHeaderReplay(
+      'PUT',
+      `/v1/seasons/${pathPart(seasonKey)}/plans/${pathPart(planKey)}/prices`,
+      { body: params, idempotencyKey: options.idempotencyKey, signal: options.signal },
+    );
+  }
+
+  /** List every package price table for a Season. */
+  listSeasonPrices(seasonKey: string): Promise<SeasonPriceList> {
+    return this.#http.get(`/v1/seasons/${pathPart(seasonKey)}/prices`);
+  }
+
+  /**
+   * Add a performance to a published package and extend its holders' allocations.
+   * Retried safely with one Idempotency-Key; a 202 carries the background `job`.
+   */
+  attachSeasonPlanPerformance(
+    seasonKey: string,
+    planKey: string,
+    params: { eventKey: string },
+    options: { idempotencyKey?: string; signal?: AbortSignal } = {},
+  ): Promise<SeasonPlanPerformanceAttachResult> {
+    return this.#http.postWithHeaderReplay(
+      `/v1/seasons/${pathPart(seasonKey)}/plans/${pathPart(planKey)}/performances`,
+      { body: params, idempotencyKey: options.idempotencyKey, signal: options.signal },
+    );
+  }
+
+  /**
+   * Remove a performance from a published package and release its allocations.
+   * Retried safely with one Idempotency-Key; a 202 carries the background `job`.
+   */
+  deleteSeasonPlanPerformance(
+    seasonKey: string,
+    planKey: string,
+    eventKey: string,
+    options: { idempotencyKey?: string; signal?: AbortSignal } = {},
+  ): Promise<SeasonPlanPerformanceRemoveResult> {
+    return this.#http.mutationWithHeaderReplay(
+      'DELETE',
+      `/v1/seasons/${pathPart(seasonKey)}/plans/${pathPart(planKey)}/performances/${pathPart(eventKey)}`,
+      { idempotencyKey: options.idempotencyKey, signal: options.signal },
+    );
+  }
+
+  /**
+   * Mark a performance past so it stops blocking new Season sales.
+   * Retried safely with one Idempotency-Key.
+   */
+  markSeasonPerformancePast(
+    seasonKey: string,
+    eventKey: string,
+    params: { force?: boolean },
+    options: { idempotencyKey?: string; signal?: AbortSignal } = {},
+  ): Promise<SeasonPerformanceList> {
+    return this.#http.postWithHeaderReplay(
+      `/v1/seasons/${pathPart(seasonKey)}/performances/${pathPart(eventKey)}/past`,
+      { body: params, idempotencyKey: options.idempotencyKey, signal: options.signal },
+    );
+  }
+
+  /**
+   * Return one occurrence's Season allocation to ordinary Event inventory.
+   * Single-attempt: `actionId` is the domain identity to reuse after an unknown outcome.
+   */
+  returnSeasonOccurrenceInventory(seasonKey: string, eventKey: string, params: {
+    actionId: string; bookingRef: string; planActivationId: string; labels: string[];
+    source: SeasonOccurrenceInventorySource;
+  }): Promise<{ occurrenceInventoryAction: SeasonOccurrenceInventoryAction }> {
+    return this.#http.post(
+      `/v1/seasons/${pathPart(seasonKey)}/occurrences/${pathPart(eventKey)}/returns`, { body: params },
+    );
+  }
+
+  /**
+   * Reclaim returned occurrence inventory while it is still free.
+   * Single-attempt: `actionId` is the domain identity to reuse after an unknown outcome.
+   */
+  reclaimSeasonOccurrenceInventory(seasonKey: string, eventKey: string, params: {
+    actionId: string; returnActionId: string; bookingRef: string; planActivationId: string;
+    labels: string[]; source: SeasonOccurrenceInventorySource;
+  }): Promise<{ occurrenceInventoryAction: SeasonOccurrenceInventoryAction }> {
+    return this.#http.post(
+      `/v1/seasons/${pathPart(seasonKey)}/occurrences/${pathPart(eventKey)}/reclaims`, { body: params },
+    );
+  }
+
+  /** One page of season ticket holders. Pass `cursor` from the previous page's `nextCursor`. */
+  listSeasonHolders(seasonKey: string, options: SeasonHolderListOptions = {}): Promise<SeasonHolderPage> {
+    return this.#http.get(`/v1/seasons/${pathPart(seasonKey)}/holders`, { query: {
+      q: options.q,
+      status: options.status,
+      cursor: options.cursor,
+      limit: options.limit,
+    } });
+  }
+
+  /**
+   * Refund a season order in full or in part through its payment provider.
+   * Retried safely with one Idempotency-Key; a 202 means the refund is still pending.
+   */
+  refundSeasonOrder(
+    seasonKey: string,
+    orderId: string,
+    params?: RefundOrderParams,
+    options: { idempotencyKey?: string; signal?: AbortSignal } = {},
+  ): Promise<SeasonOrderRefund> {
+    return this.#http.postWithHeaderReplay(
+      `/v1/seasons/${pathPart(seasonKey)}/orders/${pathPart(orderId)}/refund`,
+      { body: params, idempotencyKey: options.idempotencyKey, signal: options.signal },
+    );
+  }
+
+  /**
+   * Cancel a season order without moving money, and release every date.
+   * Retried safely with one Idempotency-Key.
+   */
+  cancelSeasonOrder(
+    seasonKey: string,
+    orderId: string,
+    params: CancelOrderParams,
+    options: { idempotencyKey?: string; signal?: AbortSignal } = {},
+  ): Promise<{ receipt: SeasonOrderCancelReceipt }> {
+    return this.#http.postWithHeaderReplay(
+      `/v1/seasons/${pathPart(seasonKey)}/orders/${pathPart(orderId)}/cancel`,
+      { body: params, idempotencyKey: options.idempotencyKey, signal: options.signal },
+    );
+  }
+
+  /**
+   * Take back one date of a season order and put its seats back on sale.
+   * Retried safely with one Idempotency-Key; a 202 means the return is still pending.
+   */
+  cancelSeasonOrderDate(
+    seasonKey: string,
+    orderId: string,
+    eventKey: string,
+    params?: { actionId?: string },
+    options: { idempotencyKey?: string; signal?: AbortSignal } = {},
+  ): Promise<{ dateCancel: SeasonOrderDateCancel }> {
+    return this.#http.postWithHeaderReplay(
+      `/v1/seasons/${pathPart(seasonKey)}/orders/${pathPart(orderId)}/dates/${pathPart(eventKey)}/cancel`,
+      { body: params, idempotencyKey: options.idempotencyKey, signal: options.signal },
+    );
+  }
+
+  /** Email a season order's tickets again. Sent once: an unknown outcome is not retried. */
+  resendSeasonOrderTickets(
+    seasonKey: string,
+    orderId: string,
+    params?: ResendOrderTicketsParams,
+  ): Promise<{ sentTo: string; [key: string]: unknown }> {
+    return this.#http.post(
+      `/v1/seasons/${pathPart(seasonKey)}/orders/${pathPart(orderId)}/resend`, { body: params },
+    );
+  }
+
+  /** Retrieve hosted renewal links, payments and emails per offer. */
+  retrieveSeasonHostedRenewals(seasonKey: string): Promise<SeasonHostedRenewals> {
+    return this.#http.get(`/v1/seasons/${pathPart(seasonKey)}/renewal-hosted`);
+  }
+
+  /**
+   * Make a new renewal link for one holder; the old link stops working. The
+   * URL is shown once and the call is never retried, so a lost response means
+   * rotating again.
+   */
+  rotateSeasonRenewalOfferLink(seasonKey: string, offerId: string): Promise<{ url: string; [key: string]: unknown }> {
+    return this.#http.post(`/v1/seasons/${pathPart(seasonKey)}/renewal-offers/${pathPart(offerId)}/link`);
+  }
+
+  /** Set the name and email a renewal offer is sent to. Pass `null` to clear one. */
+  updateSeasonRenewalOfferContact(seasonKey: string, offerId: string, params: {
+    email?: string | null; name?: string | null;
+  }): Promise<{ contact: { name: string | null; email: string | null; [key: string]: unknown } }> {
+    return this.#http.post(
+      `/v1/seasons/${pathPart(seasonKey)}/renewal-offers/${pathPart(offerId)}/contact`, { body: params },
+    );
+  }
+
+  /** Email renewal invitations now and schedule reminders before the deadline. */
+  createSeasonRenewalNotices(seasonKey: string, params?: { offerIds?: string[] }): Promise<{
+    scheduled: number; withoutEmail: number; [key: string]: unknown;
+  }> {
+    return this.#http.post(`/v1/seasons/${pathPart(seasonKey)}/renewal-notices`, { body: params });
+  }
+
+  /** Send one holder a new renewal invitation. Sent once: an unknown outcome is not retried. */
+  resendSeasonRenewalOffer(seasonKey: string, offerId: string): Promise<{ ok: true; [key: string]: unknown }> {
+    return this.#http.post(`/v1/seasons/${pathPart(seasonKey)}/renewal-offers/${pathPart(offerId)}/resend`);
+  }
+
+  /** Retrieve Season money, seats, holders and renewals as totals. */
+  retrieveSeasonSalesReport(seasonKey: string): Promise<{ report: SeasonSalesReport }> {
+    return this.#http.get(`/v1/seasons/${pathPart(seasonKey)}/reports/sales`);
+  }
+
+  /** Retrieve seats still free per package and per date. */
+  retrieveSeasonSeatsReport(seasonKey: string): Promise<{ seats: SeasonSeatsReport }> {
+    return this.#http.get(`/v1/seasons/${pathPart(seasonKey)}/reports/seats`);
+  }
+
+  /** Download every season ticket holder as CSV. Returns the CSV text unparsed. */
+  exportSeasonHoldersCsv(seasonKey: string, options: SeasonHolderFilter = {}): Promise<string> {
+    return this.#http.getText(`/v1/seasons/${pathPart(seasonKey)}/reports/holders.csv`, { query: {
+      q: options.q,
+      status: options.status,
+    } });
+  }
+
+  /** Download every season order SeatLayer took as CSV. Returns the CSV text unparsed. */
+  exportSeasonOrdersCsv(seasonKey: string): Promise<string> {
+    return this.#http.getText(`/v1/seasons/${pathPart(seasonKey)}/reports/orders.csv`);
+  }
+
+  /** Retrieve Season seats sold per package and per date. */
+  retrieveSeasonSeatCounts(seasonKey: string): Promise<{ seats: SeasonSeatCounts | null }> {
+    return this.#http.get(`/v1/seasons/${pathPart(seasonKey)}/seat-counts`);
   }
 
   async waitForSeasonRenewal(

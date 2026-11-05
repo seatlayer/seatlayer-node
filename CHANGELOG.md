@@ -1,5 +1,27 @@
 # Changelog
 
+## Unreleased
+
+- Adds 32 Season operations (80 in all): performances and package prices,
+  `publishSeason`, checkout tests, import from a previous season, occurrence
+  inventory returns and reclaims, the holder list, season order refunds and
+  cancellations, hosted renewal links, contacts and notices, sales and seat
+  reports, and holder and order CSV exports.
+- Adds `holders` (customers, holders, holder tickets, ticket transfers),
+  `orders` (orders across events and seasons, and one event's orders, refunds,
+  cancellations and resends), and `eventSeries` resources.
+- Adds 14 event sales operations to `events`: buyer checkout choice, payment
+  gateway, sales readiness, preflight and transitions, booking fee, and
+  discount codes.
+- 22 of the new mutations use exact header replay (36 in all) and reuse one
+  `Idempotency-Key` across retries; the others are sent once. CSV exports
+  resolve with the CSV text; `deleteSeasonPlan` and `deleteEventDiscountCode`
+  resolve with nothing.
+- Adds 10 webhook event names to `WebhookEventName`: `series.created`,
+  `series.dates_added`, `order.paid`, `order.refunded`, `order.cancelled`,
+  `customer.created`, `customer.email_changed`, `season.ticket.transfer_sent`,
+  `season.ticket.transferred`, and `season.ticket.transfer_cancelled`.
+
 ## 0.8.0 (2026-09-10)
 
 - Added Event hosting regions: `region` on `events.create`, the `EventHostingRegion` type, `defaultRegion` on workspace create and update, and `region` on every Event read back (null on older Events). Events created without a region run in Western Europe.

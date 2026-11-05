@@ -463,12 +463,18 @@ requests.
 
 ## Reliability
 
-**Retries and idempotency.** Reads retry 408, 429 and 5xx responses with backoff. Fourteen
+**Retries and idempotency.** Reads retry 408, 429 and 5xx responses with backoff. Thirty-six
 mutations use exact header replay: `charts.create`, `charts.copy`, `templates.instantiateTemplate`,
-`events.create`, `workspaces.create`, `performanceGroups.createPerformanceGroup`,
-`seasons.createSeason`, `seasons.updateSeason`, `seasons.deleteSeason`, `seasons.createSeasonPlan`,
-`seasons.duplicateSeasonToLive`, `seasons.createSeasonHolderImport`,
-`seasons.createSeasonRenewalOffers`, and `seasons.createSeasonAmendment`. The SDK generates one
+`events.create`, `workspaces.create`, `performanceGroups.createPerformanceGroup`; 23 Season
+operations (`createSeason`, `updateSeason`, `deleteSeason`, `publishSeason`, `createSeasonPlan`,
+`updateSeasonPlan`, `deleteSeasonPlan`, `duplicateSeasonToLive`, `createSeasonHolderImport`,
+`createSeasonHolderImportFromSeason`, `createSeasonRenewalOffers`, `createSeasonAmendment`,
+`createSeasonPerformances`, `attachSeasonPerformances`, `deleteSeasonPerformance`,
+`markSeasonPerformancePast`, `attachSeasonPlanPerformance`, `deleteSeasonPlanPerformance`,
+`replaceSeasonPackagePrices`, `createSeasonCheckoutTest`, `refundSeasonOrder`, `cancelSeasonOrder`,
+and `cancelSeasonOrderDate`); `holders.updateHolder` and `holders.createHolderTransfer`;
+`orders.refundEventOrder` and `orders.cancelEventOrder`; and `eventSeries.createEventSeries`,
+`eventSeries.addEventSeriesDates`, and `eventSeries.updateEventSeries`. The SDK generates one
 `Idempotency-Key` and reuses it for every attempt. All remaining SDK mutations are sent once; some
 have a server-side domain idempotency contract, but the SDK does not retry them automatically.
 
@@ -480,7 +486,7 @@ before trying again.
 ```ts
 new SeatLayer({
   secretKey: process.env.SEATLAYER_SECRET_KEY!,
-  maxRetries: 3,      // retries for reads and the 14 exact-header-replay mutations
+  maxRetries: 3,      // retries for reads and the 36 exact-header-replay mutations
   timeoutMs: 30_000,  // per attempt
 });
 ```
@@ -498,20 +504,26 @@ await seatlayer.request('POST', '/v1/events/ev_1/some-new-route', { body: { … 
 
 The client exposes these resources. Performance Groups cover runs, sessions, holds, and bookings;
 Seasons cover catalogue, plan, sales, buyer-session, booking, renewal, occurrence, reporting,
-outbox, and support operations.
+outbox, and support operations, plus performances, package prices, holders, season orders, hosted
+renewals, and seat reports. The CSV exports (`seasons.exportSeasonHoldersCsv`,
+`seasons.exportSeasonOrdersCsv`, `orders.exportEventOrdersCsv`) resolve with the CSV text as a
+string.
 
 | Resource | Methods |
 | --- | --- |
 | `charts` | `list` `listAll` `create` `retrieve` `update` `delete` `copy` `archive` `unarchive` `publish` |
 | `templates` | `instantiateTemplate` |
-| `events` | `list` `listAll` `create` `retrieve` `retrieveConfigurationBinding` `updateConfigurationBinding` `update` `delete` `updatePoster` `deletePoster` `updateChart` `close` `reopen` `archive` `retrieveHoldTtl` `updateHoldTtl` `listTicketReleases` `updateTicketReleases` `closeTicketRelease` `retrieveReport` `retrieveLog` |
+| `events` | `list` `listAll` `create` `retrieve` `retrieveConfigurationBinding` `updateConfigurationBinding` `update` `delete` `updatePoster` `deletePoster` `updateChart` `close` `reopen` `archive` `retrieveHoldTtl` `updateHoldTtl` `listTicketReleases` `updateTicketReleases` `closeTicketRelease` `retrieveReport` `retrieveLog` `retrieveEventBuyerCheckout` `replaceEventBuyerCheckout` `retrieveEventPaymentGateway` `replaceEventPaymentGateway` `retrieveEventSalesReadiness` `preflightEventSales` `transitionEventSales` `retrieveEventBookingFee` `replaceEventBookingFee` `listEventDiscountCodes` `createEventDiscountCode` `updateEventDiscountCode` `endEventDiscountCode` `deleteEventDiscountCode` |
+| `eventSeries` | `createEventSeries` `listEventSeries` `retrieveEventSeries` `addEventSeriesDates` `updateEventSeries` |
+| `orders` | `listOrders` `retrieveOrder` `listOrderTickets` `listEventOrders` `retrieveEventOrder` `exportEventOrdersCsv` `refundEventOrder` `cancelEventOrder` `resendEventOrderTickets` |
+| `holders` | `listCustomers` `retrieveHolder` `updateHolder` `revokeHolderSessions` `listHolderSeasons` `listHolderTickets` `retrieveHolderTicket` `createHolderTransfer` `listHolderTransfers` `cancelHolderTransfer` `acceptHolderTransfer` |
 | `inventory` | `hold` `holdBestAvailable` `bookBestAvailable` `extendHold` `retrieveHold` `release` `book` `boxOfficeBook` `unbook` `block` `unblock` `unblockAll` `retrieveAvailability` `updateAvailability` `listBookings` `retrieveBooking` `listInventoryBookings` `retrieveInventoryBooking` |
 | `channels` | `listChannels` `createChannel` `updateChannel` `updateChannelAssignments` `listChannelAllocation` `retrieveChannelAccessPreview` `pauseChannel` `unpauseChannel` `archiveChannel` `retrieveChannelReport` `createBuyerAccessSession` `listBuyerAccessSessions` `revokeBuyerAccessSession` `createAccessLink` `listAccessLinks` `rotateAccessLink` `revokeAccessLink` |
 | `sessions` | `createManageSession` `revokeManageSession` `createDesignerSession` `revokeDesignerSession` |
 | `webhooks` | `list` `create` `update` `delete` `listDeliveries` |
 | `workspaces` | `list` `create` `retrieve` `update` |
 | `performanceGroups` | `listPerformanceGroups` `createPerformanceGroup` `retrievePerformanceGroup` `deletePerformanceGroup` `activatePerformanceGroup` `closePerformanceGroup` `retrievePerformanceGroupLifecycle` `createPerformanceGroupBuyerAccessSession` `listPerformanceGroupBuyerAccessSessions` `revokePerformanceGroupBuyerAccessSession` `retrievePerformanceGroupHold` `bookPerformanceGroupHold` `retrievePerformanceGroupBooking` |
-| `seasons` | 48 organizer operations for catalogue and Plan lifecycle, sales windows, buyer access and booking, holder imports, renewals, occurrence amendments, reports, audit, outbox, and support export, plus polling helpers |
+| `seasons` | 80 organizer operations for catalogue and Plan lifecycle, performances and package prices, sales windows, buyer access and booking, checkout tests, holder imports and the holder list, season orders, renewals and hosted renewal links, occurrence amendments and inventory returns, sales and seat reports, CSV exports, audit, outbox, and support export, plus polling helpers |
 
 Full reference: [SeatLayer Server API](https://docs.seatlayer.io/server-api/events/)
 
