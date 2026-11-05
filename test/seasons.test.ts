@@ -10,7 +10,9 @@ import {
   type SeasonPriceList,
   type SeasonPriceTypeKey,
   type SeasonRenewalCheckoutStarted,
+  type SeasonBulkJob,
   type SeasonRenewalOffer,
+  type SeasonRenewalOfferJob,
   type SeasonRenewalQuote,
   type SeasonValidation,
 } from '../src/index.js';
@@ -727,6 +729,93 @@ describe('Season organizer resource', () => {
     ]);
   });
 
+  it('maps renewal at scale: the lapsed release job, the paged offer lists, and the 202 job answers', async () => {
+    const job = {
+      jobId: 'sbj_1', kind: 'lapsed_release', state: 'planning',
+      counts: { total: 0, done: 0, skipped: 0, failed: 0 }, createdAt: 1, updatedAt: 1, completedAt: null,
+    };
+    const run = { job: { ...job, kind: 'renewal_run' }, batchId: 'srb_1' };
+    const bringAcross = { job: { ...job, kind: 'holder_import' } };
+    await expectOperations([
+      {
+        name: 'releaseSeasonLapsedOffers',
+        run: (sdk) => sdk.seasons.releaseSeasonLapsedOffers('sea_a/b', { idempotencyKey: 'release-1' }),
+        method: 'POST', path: '/v1/seasons/sea_a%2Fb/renewal-offers/release-lapsed', idempotencyKey: 'release-1',
+        response: { status: 202, body: { job } }, returns: { job },
+      },
+      {
+        name: 'releaseSeasonLapsedOffers without a key',
+        run: (sdk) => sdk.seasons.releaseSeasonLapsedOffers('sea_1'),
+        method: 'POST', path: '/v1/seasons/sea_1/renewal-offers/release-lapsed', idempotencyKey: 'generated',
+        response: { status: 202, body: { job } },
+      },
+      {
+        name: 'listSeasonRenewalOffers paged',
+        run: (sdk) => sdk.seasons.listSeasonRenewalOffers('sea_a/b', { cursor: 'c/1', limit: 50 }),
+        method: 'GET', path: '/v1/seasons/sea_a%2Fb/renewal-offers?cursor=c%2F1&limit=50',
+        response: { status: 200, body: { offers: [], truncated: false, nextCursor: null } },
+        returns: { offers: [], truncated: false, nextCursor: null },
+      },
+      {
+        name: 'listSeasonRenewalOffers first page',
+        run: (sdk) => sdk.seasons.listSeasonRenewalOffers('sea_a/b'),
+        method: 'GET', path: '/v1/seasons/sea_a%2Fb/renewal-offers',
+      },
+      {
+        name: 'retrieveSeasonHostedRenewals paged',
+        run: (sdk) => sdk.seasons.retrieveSeasonHostedRenewals('sea_a/b', { cursor: 'c/2', limit: 500 }),
+        method: 'GET', path: '/v1/seasons/sea_a%2Fb/renewal-hosted?cursor=c%2F2&limit=500',
+      },
+      {
+        name: 'createSeasonRenewalOffers above 100 contracts',
+        run: (sdk) => sdk.seasons.createSeasonRenewalOffers('sea_a/b', { deadlineAt: 1 }, {
+          idempotencyKey: 'offers-1',
+        }),
+        method: 'POST', path: '/v1/seasons/sea_a%2Fb/renewal-offers', body: { deadlineAt: 1 },
+        idempotencyKey: 'offers-1',
+        response: { status: 202, body: run }, returns: run,
+      },
+      {
+        name: 'createSeasonHolderImportFromSeason above 100 holders',
+        run: (sdk) => sdk.seasons.createSeasonHolderImportFromSeason('sea_a/b', {
+          sourceSeasonId: 'sea_0', successorPlanActivationId: 'spa_1',
+        }, { idempotencyKey: 'from-season-1' }),
+        method: 'POST', path: '/v1/seasons/sea_a%2Fb/imports/from-season',
+        body: { sourceSeasonId: 'sea_0', successorPlanActivationId: 'spa_1' }, idempotencyKey: 'from-season-1',
+        response: { status: 202, body: bringAcross }, returns: bringAcross,
+      },
+    ]);
+  });
+
+  it('types both answers of the renewal run and the bring-across, and the paged lists', () => {
+    const sdk = new SeatLayer({ secretKey: 'sk_test_abc', fetch: stubFetch([]).fetch });
+    expectTypeOf(sdk.seasons.createSeasonRenewalOffers).returns.resolves
+      .toEqualTypeOf<{ offers: SeasonRenewalOffer[] } | SeasonRenewalOfferJob>();
+    expectTypeOf<SeasonRenewalOfferJob>().toEqualTypeOf<{ job: SeasonBulkJob; batchId: string }>();
+    expectTypeOf(sdk.seasons.createSeasonHolderImportFromSeason).returns.resolves
+      .extract<{ job: SeasonBulkJob }>().toEqualTypeOf<{ job: SeasonBulkJob }>();
+    expectTypeOf(sdk.seasons.releaseSeasonLapsedOffers).returns.resolves.toEqualTypeOf<{ job: SeasonBulkJob }>();
+    expectTypeOf<'holder_import'>().toMatchTypeOf<SeasonBulkJob['kind']>();
+    expectTypeOf<SeasonBulkJobDetail['summary']>().toEqualTypeOf<Record<string, unknown>>();
+    expectTypeOf<Awaited<ReturnType<typeof sdk.seasons.listSeasonRenewalOffers>>['nextCursor']>()
+      .toEqualTypeOf<string | null>();
+    expectTypeOf<Awaited<ReturnType<typeof sdk.seasons.retrieveSeasonHostedRenewals>>['nextCursor']>()
+      .toEqualTypeOf<string | null>();
+  });
+
+  it('retries the release of lapsed offers with one key', async () => {
+    const stub = stubFetch([
+      { status: 503, body: { error: 'job_busy' } },
+      { status: 202, body: { job: { jobId: 'sbj_1' } } },
+    ]);
+    const sdk = new SeatLayer({ secretKey: 'sk_test_abc', fetch: stub.fetch, maxRetries: 2 });
+    await sdk.seasons.releaseSeasonLapsedOffers('sea_1');
+    const headers = stub.calls.map((call) => call.init.headers as Record<string, string>);
+    expect(headers[0]!['Idempotency-Key']).toMatch(GENERATED_KEY);
+    expect(headers[1]!['Idempotency-Key']).toBe(headers[0]!['Idempotency-Key']);
+    expect(stub.calls.map((call) => call.init.body)).toEqual([undefined, undefined]);
+  });
+
   it('retries a bulk refund with one key', async () => {
     const stub = stubFetch([
       { status: 503, body: { error: 'unavailable' } },
@@ -918,7 +1007,7 @@ describe('Season organizer resource', () => {
       .toEqualTypeOf<SeasonRenewalCheckoutStarted>();
   });
 
-  it('exposes exactly 86 season operations, plus the polling helpers and the import alias', () => {
+  it('exposes exactly 87 season operations, plus the polling helpers and the import alias', () => {
     const sdk = new SeatLayer({ secretKey: 'sk_test_abc', fetch: stubFetch([]).fetch });
     const methods = Object.getOwnPropertyNames(Object.getPrototypeOf(sdk.seasons))
       .filter((name) => name !== 'constructor');
@@ -926,7 +1015,7 @@ describe('Season organizer resource', () => {
     expect(helpers.sort()).toEqual([
       'importSeasonHolders', 'waitForSeasonBooking', 'waitForSeasonLifecycle', 'waitForSeasonRenewal',
     ]);
-    expect(methods.length - helpers.length).toBe(86);
+    expect(methods.length - helpers.length).toBe(87);
   });
 
   it('types CSV exports as text and the 204 plan delete as void', () => {

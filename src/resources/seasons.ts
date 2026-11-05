@@ -552,7 +552,8 @@ export interface SeasonDateJob {
 }
 
 export type SeasonBulkJobKind =
-  | 'date_added' | 'date_removed' | 'renewal_run' | 'lapsed_release' | 'bulk_refund' | 'series_dates' | 'series_update';
+  | 'date_added' | 'date_removed' | 'renewal_run' | 'lapsed_release' | 'bulk_refund' | 'holder_import'
+  | 'series_dates' | 'series_update';
 
 export type SeasonBulkJobState = 'planning' | 'running' | 'completed' | 'failed' | 'cancelled';
 
@@ -577,8 +578,30 @@ export interface SeasonBulkJob {
 }
 
 export interface SeasonBulkJobDetail extends SeasonBulkJob {
+  /**
+   * What the job ended with, empty until it completes. `holder_import`: the same counts as a
+   * bring-across of 100 holders or fewer. `renewal_run`: `batchId`, `offered`, `skipped`, `failed`.
+   */
+  summary: Record<string, unknown>;
   /** At most 500. For a refund, `key` is the order id and `error` the provider's reason. */
   failedItems: Array<{ key: string; error: string | null; attempts: number; [key: string]: unknown }>;
+}
+
+/** The 202 answer of `createSeasonRenewalOffers` above 100 contracts: a `renewal_run` job makes them. */
+export interface SeasonRenewalOfferJob {
+  job: SeasonBulkJob;
+  /** The batch the job is making offers for. Read them with `listSeasonRenewalOffers` once it completes. */
+  batchId: string;
+}
+
+/** One page of a renewal offer list. Pass `cursor` from the previous page's `nextCursor`. */
+export interface SeasonRenewalOfferPageOptions {
+  cursor?: string;
+  /**
+   * Offers a page: 1-100 for `listSeasonRenewalOffers` (default 100), 1-500 for
+   * `retrieveSeasonHostedRenewals` (default 500).
+   */
+  limit?: number;
 }
 
 /** The refund job a `cancel` amendment started when it asked for a refund. */
@@ -739,6 +762,8 @@ export interface SeasonHostedRenewals {
     [key: string]: unknown;
   };
   holdersWithoutEmail: number;
+  /** Pass back as `cursor` for the next page of offers; null on the last. */
+  nextCursor: string | null;
   offers: Array<{
     offerId: string;
     holderName: string | null;
@@ -1075,18 +1100,30 @@ export class Seasons {
     return this.#http.get(`/v1/seasons/${pathPart(seasonKey)}/imports/${pathPart(importId)}`);
   }
 
+  /**
+   * Make one renewal offer per eligible prior Contract. 100 contracts or fewer answer
+   * `{ offers }`; more answer 202 `{ job, batchId }`: a `renewal_run` job makes the offers.
+   * Follow it with `retrieveSeasonBulkJob`, then page them with `listSeasonRenewalOffers`.
+   * Retried safely with one Idempotency-Key, which answers the same offers or job.
+   */
   createSeasonRenewalOffers(
     seasonKey: string,
     params: { successorPlanActivationId?: string; deadlineAt: number; contractIds?: string[] },
     options: { idempotencyKey?: string; signal?: AbortSignal } = {},
-  ): Promise<{ offers: SeasonRenewalOffer[] }> {
+  ): Promise<{ offers: SeasonRenewalOffer[] } | SeasonRenewalOfferJob> {
     return this.#http.postWithHeaderReplay(`/v1/seasons/${pathPart(seasonKey)}/renewal-offers`, {
       body: params, idempotencyKey: options.idempotencyKey, signal: options.signal,
     });
   }
 
-  listSeasonRenewalOffers(seasonKey: string): Promise<{ offers: SeasonRenewalOffer[]; truncated: boolean }> {
-    return this.#http.get(`/v1/seasons/${pathPart(seasonKey)}/renewal-offers`);
+  /** One page of renewal offers, newest first. Pass `cursor` from the previous page's `nextCursor`. */
+  listSeasonRenewalOffers(seasonKey: string, options: SeasonRenewalOfferPageOptions = {}): Promise<{
+    offers: SeasonRenewalOffer[]; truncated: boolean; nextCursor: string | null;
+  }> {
+    return this.#http.get(`/v1/seasons/${pathPart(seasonKey)}/renewal-offers`, { query: {
+      cursor: options.cursor,
+      limit: options.limit,
+    } });
   }
 
   retrieveSeasonRenewalOffer(seasonKey: string, offerId: string): Promise<SeasonRenewalResult> {
@@ -1193,13 +1230,15 @@ export class Seasons {
 
   /**
    * Dry-run or commit renewal rights derived from a previous season's holders.
-   * Retried safely with one Idempotency-Key.
+   * A commit of more than 100 holders answers 202 `{ job }`: a `holder_import` job brings them
+   * across, and its `summary` has the same counts when it completes.
+   * Retried safely with one Idempotency-Key, which answers the same import or job.
    */
   createSeasonHolderImportFromSeason(
     seasonKey: string,
     params: { sourceSeasonId: string; successorPlanActivationId: string; dryRun?: boolean },
     options: { idempotencyKey?: string; signal?: AbortSignal } = {},
-  ): Promise<{ import: SeasonHolderImportFromSeason }> {
+  ): Promise<{ import: SeasonHolderImportFromSeason } | { job: SeasonBulkJob }> {
     return this.#http.postWithHeaderReplay(`/v1/seasons/${pathPart(seasonKey)}/imports/from-season`, {
       body: params, idempotencyKey: options.idempotencyKey, signal: options.signal,
     });
@@ -1474,9 +1513,18 @@ export class Seasons {
     );
   }
 
-  /** Retrieve hosted renewal links, payments and emails per offer. */
-  retrieveSeasonHostedRenewals(seasonKey: string): Promise<SeasonHostedRenewals> {
-    return this.#http.get(`/v1/seasons/${pathPart(seasonKey)}/renewal-hosted`);
+  /**
+   * Retrieve hosted renewal links, payments and emails for one page of offers, newest first.
+   * Pass `cursor` from the previous page's `nextCursor`.
+   */
+  retrieveSeasonHostedRenewals(
+    seasonKey: string,
+    options: SeasonRenewalOfferPageOptions = {},
+  ): Promise<SeasonHostedRenewals> {
+    return this.#http.get(`/v1/seasons/${pathPart(seasonKey)}/renewal-hosted`, { query: {
+      cursor: options.cursor,
+      limit: options.limit,
+    } });
   }
 
   /**
@@ -1497,7 +1545,10 @@ export class Seasons {
     );
   }
 
-  /** Email renewal invitations now and schedule reminders before the deadline. */
+  /**
+   * Email renewal invitations now and schedule reminders before the deadline. Leave `offerIds`
+   * out to email every open offer; more than 20,000 ids answers `422 too_many_offer_ids`.
+   */
   createSeasonRenewalNotices(seasonKey: string, params?: { offerIds?: string[] }): Promise<{
     scheduled: number; withoutEmail: number; [key: string]: unknown;
   }> {
@@ -1579,6 +1630,21 @@ export class Seasons {
     return this.#http.postWithHeaderReplay(
       `/v1/seasons/${pathPart(seasonKey)}/performances/${pathPart(eventKey)}/refunds`,
       { body: params, idempotencyKey: options.idempotencyKey, signal: options.signal },
+    );
+  }
+
+  /**
+   * Release the seats of every lapsed renewal offer, as a job. An offer extended before its
+   * turn is skipped and keeps its seat. Follow it with `retrieveSeasonBulkJob`. Retried safely
+   * with one Idempotency-Key, which replays the same job.
+   */
+  releaseSeasonLapsedOffers(
+    seasonKey: string,
+    options: { idempotencyKey?: string; signal?: AbortSignal } = {},
+  ): Promise<{ job: SeasonBulkJob }> {
+    return this.#http.postWithHeaderReplay(
+      `/v1/seasons/${pathPart(seasonKey)}/renewal-offers/release-lapsed`,
+      { idempotencyKey: options.idempotencyKey, signal: options.signal },
     );
   }
 

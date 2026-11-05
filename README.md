@@ -285,11 +285,16 @@ await seatlayer.seasons.createSeasonHolderImport(
   { idempotencyKey: 'incumbents-2027-commit' },
 );
 const deadlineAt = Date.parse('2027-06-30T23:59:59Z');
-const { offers } = await seatlayer.seasons.createSeasonRenewalOffers(
+const created = await seatlayer.seasons.createSeasonRenewalOffers(
   seasonKey,
   { successorPlanActivationId: importInput.successorPlanActivationId, deadlineAt },
   { idempotencyKey: 'renewal-offers-2027' },
 );
+// Above 100 contracts the answer is { job, batchId }: a renewal_run job makes the
+// offers. Follow it with retrieveSeasonBulkJob, then page them with
+// listSeasonRenewalOffers ({ cursor: page.nextCursor }).
+if ('job' in created) return followRenewalRun(created.job, created.batchId);
+const { offers } = created;
 
 // Browser intent is not payment. Inspect and commit only after your trusted
 // host has made its commercial decision with the exact immutable Plan.
@@ -494,16 +499,17 @@ requests.
 
 ## Reliability
 
-**Retries and idempotency.** Reads retry 408, 429 and 5xx responses with backoff. Forty
+**Retries and idempotency.** Reads retry 408, 429 and 5xx responses with backoff. Forty-one
 mutations use exact header replay: `charts.create`, `charts.copy`, `templates.instantiateTemplate`,
-`events.create`, `workspaces.create`, `performanceGroups.createPerformanceGroup`; 25 Season
+`events.create`, `workspaces.create`, `performanceGroups.createPerformanceGroup`; 26 Season
 operations (`createSeason`, `updateSeason`, `deleteSeason`, `publishSeason`, `createSeasonPlan`,
 `updateSeasonPlan`, `deleteSeasonPlan`, `duplicateSeasonToLive`, `createSeasonHolderImport`,
 `createSeasonHolderImportFromSeason`, `createSeasonRenewalOffers`, `createSeasonAmendment`,
 `createSeasonPerformances`, `attachSeasonPerformances`, `deleteSeasonPerformance`,
 `markSeasonPerformancePast`, `attachSeasonPlanPerformance`, `deleteSeasonPlanPerformance`,
 `replaceSeasonPackagePrices`, `createSeasonCheckoutTest`, `refundSeasonOrder`, `cancelSeasonOrder`,
-`cancelSeasonOrderDate`, `refundSeasonPerformance`, and `createSeasonRenewalCheckout`);
+`cancelSeasonOrderDate`, `refundSeasonPerformance`, `releaseSeasonLapsedOffers`, and
+`createSeasonRenewalCheckout`);
 `holders.updateHolder`, `holders.createHolderTransfer`, `holders.createHolderReturn`, and
 `holders.createHolderRenewalCheckout`; `orders.refundEventOrder` and `orders.cancelEventOrder`; and
 `eventSeries.createEventSeries`, `eventSeries.addEventSeriesDates`, and
@@ -519,7 +525,7 @@ before trying again.
 ```ts
 new SeatLayer({
   secretKey: process.env.SEATLAYER_SECRET_KEY!,
-  maxRetries: 3,      // retries for reads and the 40 exact-header-replay mutations
+  maxRetries: 3,      // retries for reads and the 41 exact-header-replay mutations
   timeoutMs: 30_000,  // per attempt
 });
 ```
@@ -556,7 +562,7 @@ string.
 | `webhooks` | `list` `create` `update` `delete` `listDeliveries` |
 | `workspaces` | `list` `create` `retrieve` `update` |
 | `performanceGroups` | `listPerformanceGroups` `createPerformanceGroup` `retrievePerformanceGroup` `deletePerformanceGroup` `activatePerformanceGroup` `closePerformanceGroup` `retrievePerformanceGroupLifecycle` `createPerformanceGroupBuyerAccessSession` `listPerformanceGroupBuyerAccessSessions` `revokePerformanceGroupBuyerAccessSession` `retrievePerformanceGroupHold` `bookPerformanceGroupHold` `retrievePerformanceGroupBooking` |
-| `seasons` | 86 organizer operations for catalogue and Plan lifecycle, performances and package prices (with price types), sales windows, buyer access and booking, checkout tests, holder imports and the holder list, season orders, renewals and hosted renewal links, renewal quotes and checkouts, occurrence amendments (postpone, cancel) and inventory returns, bulk refunds of a cancelled date and the jobs that run them, sales and seat reports, CSV exports, audit, outbox, and support export, plus polling helpers |
+| `seasons` | 87 organizer operations for catalogue and Plan lifecycle, performances and package prices (with price types), sales windows, buyer access and booking, checkout tests, holder imports and the holder list, season orders, renewals and hosted renewal links, renewal quotes and checkouts, occurrence amendments (postpone, cancel) and inventory returns, bulk refunds of a cancelled date and the release of lapsed renewal offers with the jobs that run them, sales and seat reports, CSV exports, audit, outbox, and support export, plus polling helpers |
 
 Full reference: [SeatLayer Server API](https://docs.seatlayer.io/server-api/events/)
 

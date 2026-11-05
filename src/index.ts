@@ -171,6 +171,8 @@ export {
   type SeasonSourcePerformanceGroup,
   type SeasonStructureState,
   type SeasonRenewalOffer,
+  type SeasonRenewalOfferJob,
+  type SeasonRenewalOfferPageOptions,
   type SeasonOccurrence,
   type SeasonAmendment,
   type SeasonAmendmentKind,
