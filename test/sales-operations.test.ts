@@ -466,6 +466,17 @@ describe('Event series resource', () => {
     }]);
   });
 
+  it('makes a series from an event already set up (fromEventKey)', async () => {
+    const schedule = { rule: 'daily' as const, from: '2026-11-06', until: '2026-11-19', times: ['14:00', '17:30', '20:15'] };
+    await expectOperations([{
+      name: 'createEventSeries',
+      run: (sdk) => sdk.eventSeries.createEventSeries({ fromEventKey: 'lighthouse-keeper', schedule }, { idempotencyKey: 'series-2' }),
+      method: 'POST', path: '/v1/event-series',
+      body: { fromEventKey: 'lighthouse-keeper', schedule }, idempotencyKey: 'series-2',
+      response: { status: 202, body: { series: { seriesKey: 'ser_2', firstEventKey: 'lighthouse-keeper' }, jobId: 'job_4' } },
+    }]);
+  });
+
   it('maps all 5 event series operations', async () => {
     const schedule = { rule: 'weekly' as const, from: '2027-01-01', count: 4, times: ['19:30'] };
     await expectOperations([

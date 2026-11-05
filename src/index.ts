@@ -241,6 +241,8 @@ export type {
 export type {
   AddEventSeriesDatesParams,
   CreateEventSeriesParams,
+  CreateEventSeriesFromPlanParams,
+  CreateEventSeriesFromEventParams,
   EventSeries,
   EventSeriesCreated,
   EventSeriesDatesAdded,

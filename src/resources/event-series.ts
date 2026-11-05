@@ -36,7 +36,8 @@ export interface EventSeries {
   [key: string]: unknown;
 }
 
-export interface CreateEventSeriesParams {
+/** A series planned on a published floor plan. Every date carries `name` as its name. */
+export interface CreateEventSeriesFromPlanParams {
   name: string;
   chartKey: string;
   schedule: EventSeriesSchedule;
@@ -46,6 +47,26 @@ export interface CreateEventSeriesParams {
   /** Plan the dates without creating anything. */
   dryRun?: boolean;
 }
+
+/**
+ * A series made from an event you already set up. The event becomes the first
+ * date under its own key, and every other date is a copy of it: floor plan,
+ * prices, checkout, payment account, poster, booking form and its own seat
+ * blocks, but none of its orders, holds, sales or reservations. The series
+ * takes the event's name, zone and floor plan.
+ */
+export interface CreateEventSeriesFromEventParams {
+  fromEventKey: string;
+  schedule: EventSeriesSchedule;
+  /** Optional; when sent it must be the event's own name. */
+  name?: string;
+  /** Optional; when sent it must be the event's own zone. */
+  timezone?: string;
+  /** List every date the series would hold, the event included, without creating anything. */
+  dryRun?: boolean;
+}
+
+export type CreateEventSeriesParams = CreateEventSeriesFromPlanParams | CreateEventSeriesFromEventParams;
 
 export interface EventSeriesCreated {
   series: EventSeries;
