@@ -22,7 +22,12 @@ export interface Order {
   kind: 'event' | 'season' | 'renewal' | 'box_office';
   eventKey: string | null;
   seasonKey: string | null;
-  buyer: { name: string | null; email: string; [key: string]: unknown };
+  /** A season order's own id, or the reference a renewal was offered to; null for event and box office orders. */
+  holderRef: string | null;
+  /** The customer the order belongs to once its buyer has signed in; otherwise null. */
+  customerId: string | null;
+  /** `email` is null for a box office sale taken without one. */
+  buyer: { name: string | null; email: string | null; [key: string]: unknown };
   amounts: {
     currency: string;
     subtotalMinor: number;
@@ -61,6 +66,8 @@ export interface OrderListOptions {
   eventKey?: string;
   /** Only this season's orders, renewals included. */
   seasonKey?: string;
+  /** Only this holder's orders: the season order with this id and renewals offered to this reference. */
+  holderRef?: string;
   status?: OrderStatus;
   /** Created at or after, in epoch milliseconds. */
   from?: number;
@@ -182,6 +189,7 @@ export class Orders {
     return this.#http.get('/v1/orders', { query: {
       eventKey: options.eventKey,
       seasonKey: options.seasonKey,
+      holderRef: options.holderRef,
       status: options.status,
       from: options.from,
       to: options.to,

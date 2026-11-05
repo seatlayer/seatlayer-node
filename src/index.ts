@@ -159,6 +159,7 @@ export {
   type SeasonPlanPerformanceRemoveResult,
   type SeasonPriceList,
   type SeasonPublishResult,
+  type SeasonSalesOpenResult,
   type SeasonSalesReport,
   type SeasonSeatCounts,
   type SeasonSeatsReport,

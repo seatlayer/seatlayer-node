@@ -708,9 +708,9 @@ describe('Season organizer resource', () => {
       },
       {
         name: 'refundSeasonPerformance without a key',
-        run: (sdk) => sdk.seasons.refundSeasonPerformance('sea_1', 'ev_1', { amount: 'full' }),
+        run: (sdk) => sdk.seasons.refundSeasonPerformance('sea_1', 'ev_1', { amount: 'per_date' }),
         method: 'POST', path: '/v1/seasons/sea_1/performances/ev_1/refunds',
-        body: { amount: 'full' }, idempotencyKey: 'generated', response: { status: 202, body: { job } },
+        body: { amount: 'per_date' }, idempotencyKey: 'generated', response: { status: 202, body: { job } },
       },
       {
         name: 'listSeasonBulkJobs',
@@ -733,7 +733,7 @@ describe('Season organizer resource', () => {
       { status: 202, body: { job: { jobId: 'sbj_1' } } },
     ]);
     const sdk = new SeatLayer({ secretKey: 'sk_test_abc', fetch: stub.fetch, maxRetries: 2 });
-    await sdk.seasons.refundSeasonPerformance('sea_1', 'ev_1', { amount: 'full' });
+    await sdk.seasons.refundSeasonPerformance('sea_1', 'ev_1', { amount: 'per_date' });
     const headers = stub.calls.map((call) => call.init.headers as Record<string, string>);
     expect(headers[0]!['Idempotency-Key']).toMatch(GENERATED_KEY);
     expect(headers[1]!['Idempotency-Key']).toBe(headers[0]!['Idempotency-Key']);

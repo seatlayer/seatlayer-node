@@ -49,6 +49,14 @@
 - Adds `holders.createHolderRenewalCheckout`: the same checkout for one of a holder's offers, with header replay.
 - Adds `holders.declineHolderRenewalOffer`: decline one of a holder's offers, with an optional `reason`.
 - `declineSeasonRenewalOffer` takes an optional `{ reason }` (`DeclineSeasonRenewalOfferParams`), and `SeasonRenewalOffer` has `declineReason`.
+- `Season` carries `checkoutMode`, `transferCutoffHours`, and `returnCutoffHours`, and `audience` is `'embed_only' | 'public'`; `updateSeason` takes `audience`.
+- `openSeasonSales` resolves with `warnings` (`SeasonSalesOpenResult`): `checkout_test_missing` until a checkout test or rehearsal has passed. It can also refuse with `409 plan_not_published` or `409 checkout_mode_not_chosen`.
+- A cancelled date refunds per date only: `createSeasonAmendment`'s `refund` is `'none' | 'per_date'`, and `refundSeasonPerformance` takes `amount: 'per_date'` (`full` answers `422 date_refund_per_date_only`; refund a whole order with the order refund).
+- `SeasonHolder.status` adds `reserved` (an imported holder with seats and no offer yet).
+- `retrieveSeasonHostedRenewals` readiness carries `missingPrices` with `prices_missing`.
+- `addEventSeriesDates` takes `{ retryFailed: true }` to make the failed dates again (`409 series_busy`, `422 nothing_to_retry`).
+- `Order` has `holderRef` and `customerId`, and `buyer.email` is nullable (a box office sale with no email); `listOrders` takes `holderRef`.
+- Season holds, give-backs, and date cancels can refuse with `performance_cancelled`, `refund_not_started` (503), `missing_manage_capability` (403), or `invalid_refund`.
 
 ## 0.8.0 (2026-09-10)
 

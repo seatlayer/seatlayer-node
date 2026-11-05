@@ -282,10 +282,10 @@ describe('Orders resource', () => {
       {
         name: 'listOrders',
         run: (sdk) => sdk.orders.listOrders({
-          eventKey: 'ev a/b', seasonKey: 'sea_a/b', status: 'confirmed', from: 1, to: 2, cursor: 'c/1', limit: 50,
+          eventKey: 'ev a/b', seasonKey: 'sea_a/b', holderRef: 'ord_1/2', status: 'confirmed', from: 1, to: 2, cursor: 'c/1', limit: 50,
         }),
         method: 'GET',
-        path: '/v1/orders?eventKey=ev+a%2Fb&seasonKey=sea_a%2Fb&status=confirmed&from=1&to=2&cursor=c%2F1&limit=50',
+        path: '/v1/orders?eventKey=ev+a%2Fb&seasonKey=sea_a%2Fb&holderRef=ord_1%2F2&status=confirmed&from=1&to=2&cursor=c%2F1&limit=50',
       },
       {
         name: 'retrieveOrder',
@@ -456,6 +456,16 @@ describe('Event sales operations', () => {
 });
 
 describe('Event series resource', () => {
+  it('makes failed dates again with { retryFailed: true }', async () => {
+    await expectOperations([{
+      name: 'addEventSeriesDates',
+      run: (sdk) => sdk.eventSeries.addEventSeriesDates('ser/1', { retryFailed: true }),
+      method: 'POST', path: '/v1/event-series/ser%2F1/dates',
+      body: { retryFailed: true }, idempotencyKey: 'generated',
+      response: { status: 202, body: { jobId: 'job_3', added: 2 } },
+    }]);
+  });
+
   it('maps all 5 event series operations', async () => {
     const schedule = { rule: 'weekly' as const, from: '2027-01-01', count: 4, times: ['19:30'] };
     await expectOperations([

@@ -82,7 +82,11 @@ export interface EventSeriesDetail {
 }
 
 /** Add dates from another repeat rule, or from an explicit list. */
-export type AddEventSeriesDatesParams = { schedule: EventSeriesSchedule } | { dates: string[] };
+/**
+ * New dates by schedule, by exact moments, or `{ retryFailed: true }` to make
+ * again every date that failed to be made (up to 100, as in `job.failedDates`).
+ */
+export type AddEventSeriesDatesParams = { schedule: EventSeriesSchedule } | { dates: string[] } | { retryFailed: true };
 
 export interface EventSeriesDatesAdded {
   jobId: string;

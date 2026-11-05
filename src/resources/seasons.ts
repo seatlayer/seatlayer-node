@@ -41,7 +41,14 @@ export interface Season {
   currency: string;
   venue: string | null;
   timezone: string | null;
-  audience: 'embed_only';
+  /** `public` lists the season on your SeatLayer website. */
+  audience: 'embed_only' | 'public';
+  /** Who takes the money: `seatlayer` (SeatLayer checkout) or `server` (your own). Null until you choose. */
+  checkoutMode: 'seatlayer' | 'server' | null;
+  /** Hours before a date starts that its tickets stop being sent to others; null is until it starts. */
+  transferCutoffHours: number | null;
+  /** Hours before a date starts that a holder can no longer give a seat back on it; null is until it starts. */
+  returnCutoffHours: number | null;
   revision: number;
   structureState: SeasonStructureState;
   salesState: SeasonSalesState;
@@ -55,6 +62,12 @@ export interface Season {
 
 export interface SeasonDetail extends Season {
   plans: SeasonPlan[];
+}
+
+/** What opening sales answers: the season and anything advised but not required. */
+export interface SeasonSalesOpenResult {
+  season: SeasonDetail;
+  warnings: Array<{ code: 'checkout_test_missing' | (string & {}); message: string; [key: string]: unknown }>;
 }
 
 export interface SeasonCompatibilityIssue {
@@ -323,7 +336,8 @@ export interface CreateSeasonAmendmentParams {
   startsAt?: number;
   name?: string;
   /** With `cancel` only: refund the date's SeatLayer orders as a job. `none` (the default) refunds nothing. */
-  refund?: 'none' | 'per_date' | 'full';
+  /** Refund each holder for the cancelled date (`per_date`). A whole-order refund is the order refund. */
+  refund?: 'none' | 'per_date';
   /** With a refund: kept on the job. */
   reason?: string;
 }
@@ -578,7 +592,8 @@ export interface SeasonRefundJobSummary {
 
 export interface RefundSeasonPerformanceParams {
   /** `per_date`: the date's share of each order (rounded down). `full`: what is left of each order. */
-  amount: 'per_date' | 'full';
+  /** What is refunded: each holder's share for this date. `full` is refused (`422 date_refund_per_date_only`); refund a whole order with the order refund. */
+  amount: 'per_date';
   /** Kept on the job. */
   reason?: string;
 }
@@ -593,6 +608,8 @@ export interface UpdateSeasonParams {
   transferCutoffHours?: number | null;
   /** Hours before a date starts that a holder can no longer give a seat back (0 to 720); `null` means until it starts. */
   returnCutoffHours?: number | null;
+  /** `public` lists the season on your SeatLayer website; an ended season cannot become public (`409 sales_ended`). */
+  audience?: 'embed_only' | 'public';
 }
 
 export interface SeasonStoppedOrder {
@@ -656,7 +673,7 @@ export interface SeasonHolder {
   soldAtCounter: boolean;
   orderStatus: string | null;
   status: 'active' | 'partly_cancelled' | 'cancelled' | 'needs_review'
-    | 'renewal_open' | 'renewed' | 'declined' | 'lapsed';
+    | 'reserved' | 'renewal_open' | 'renewed' | 'declined' | 'lapsed';
   renewal: { offerId: string; state: string; deadlineAt: number | null; [key: string]: unknown } | null;
   boughtAt: number | null;
   [key: string]: unknown;
@@ -714,7 +731,13 @@ export interface SeasonOrderDateCancel {
 export interface SeasonHostedRenewals {
   checkoutMode: 'seatlayer' | 'server' | null;
   transferCutoffHours?: number | null;
-  readiness: { ready: boolean; problem: string | null; [key: string]: unknown };
+  readiness: {
+    ready: boolean;
+    problem: string | null;
+    /** With `prices_missing`: the seat types holders renew as that their next package does not price. */
+    missingPrices?: Array<{ packageId: string; categoryKey: string; priceTypeKey: string; [key: string]: unknown }>;
+    [key: string]: unknown;
+  };
   holdersWithoutEmail: number;
   offers: Array<{
     offerId: string;
@@ -949,8 +972,12 @@ export class Seasons {
     );
   }
 
-  openSeasonSales(seasonKey: string, expectedRevision: number): Promise<{ season: SeasonDetail }> {
-    return this.#sales(seasonKey, 'open', expectedRevision);
+  /**
+   * Open sales. `warnings` says what is advised but not required, such as
+   * `checkout_test_missing` until a checkout test or rehearsal has passed.
+   */
+  openSeasonSales(seasonKey: string, expectedRevision: number): Promise<SeasonSalesOpenResult> {
+    return this.#sales(seasonKey, 'open', expectedRevision) as Promise<SeasonSalesOpenResult>;
   }
 
   pauseSeasonSales(seasonKey: string, expectedRevision: number): Promise<{ season: SeasonDetail }> {
