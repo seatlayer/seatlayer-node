@@ -142,11 +142,19 @@ export class HttpClient {
 
   /** Internal typed-operation path for any mutation backed by exact header replay. */
   mutationWithHeaderReplay<T>(
-    method: 'POST' | 'PATCH' | 'DELETE',
+    method: 'POST' | 'PUT' | 'PATCH' | 'DELETE',
     path: string,
     options: RequestOptions = {},
   ): Promise<T> {
     return this.#request<T>(method, path, options, true);
+  }
+
+  /**
+   * Internal read for text downloads such as CSV exports. The success body is
+   * returned as-is instead of being parsed as JSON; errors still map as usual.
+   */
+  getText(path: string, options: RequestOptions = {}): Promise<string> {
+    return this.#request<string>('GET', path, options, false, 'text');
   }
 
   async #request<T>(
@@ -154,6 +162,7 @@ export class HttpClient {
     path: string,
     options: RequestOptions,
     headerReplay: boolean,
+    responseType: 'json' | 'text' = 'json',
   ): Promise<T> {
     method = method.toUpperCase();
     if (options.body !== undefined && options.rawBody !== undefined) {
@@ -166,7 +175,7 @@ export class HttpClient {
 
     const headers: Record<string, string> = {
       Authorization: `Bearer ${this.#secretKey}`,
-      Accept: 'application/json',
+      Accept: responseType === 'text' ? 'text/csv, application/json' : 'application/json',
       'User-Agent': '@seatlayer/server',
     };
     if (options.body !== undefined) headers['Content-Type'] = 'application/json';
@@ -224,6 +233,7 @@ export class HttpClient {
         options.onResponse?.(response);
         if (response.status === 204) return undefined as T;
         const text = await response.text();
+        if (responseType === 'text') return text as T;
         return (text ? JSON.parse(text) : undefined) as T;
       }
 

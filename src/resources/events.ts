@@ -25,6 +25,8 @@ export interface EventListOptions {
   cursor?: string;
   /** Include live availability counts. One server round-trip per event. */
   counts?: boolean;
+  /** Only the dates of this event series. */
+  seriesKey?: string;
 }
 
 export interface EventPage {
@@ -60,6 +62,136 @@ export type EventUpdateParams = {
 /** Raw image input accepted by fetch; Node Buffers satisfy ArrayBufferView. */
 export type PosterImage = Blob | ArrayBuffer | ArrayBufferView;
 
+/** Where an event is in its sales lifecycle. */
+export type EventSalesState = 'setup' | 'testable' | 'live' | 'paused' | 'ended';
+
+/** Who takes payment: SeatLayer's hosted checkout, or your own (`integrator`). */
+export type EventBuyerCheckout = 'seatlayer' | 'integrator';
+
+export interface EventBuyerCheckoutOption {
+  value: EventBuyerCheckout;
+  selected: boolean;
+  eligible: boolean;
+  blockers: Array<{ reason: string; count?: number; [key: string]: unknown }>;
+  [key: string]: unknown;
+}
+
+export interface EventBuyerCheckoutState {
+  buyerCheckout: EventBuyerCheckout | null;
+  revision: number;
+  salesState: EventSalesState;
+  paymentGateway: unknown;
+  options: EventBuyerCheckoutOption[];
+  [key: string]: unknown;
+}
+
+export interface EventBuyerCheckoutReplaceResult extends EventBuyerCheckoutState {
+  ok: boolean;
+  changed: boolean;
+  from?: string | null;
+  paymentGatewayCleared?: boolean;
+  meta: Record<string, unknown>;
+}
+
+export interface EventPaymentGatewayOptions {
+  assigned: string | null;
+  assignedConnectionId: string | null;
+  buyerCheckout: string | null;
+  eventMode: KeyMode;
+  eventCurrency: string | null;
+  options: Array<{
+    connectionId: string;
+    provider: string;
+    mode: string;
+    currency: string | null;
+    eligible: boolean;
+    problem?: string;
+    [key: string]: unknown;
+  }>;
+  problem: string | null;
+  [key: string]: unknown;
+}
+
+export interface EventPaymentGatewayAssignment {
+  assigned: string | null;
+  assignedConnectionId: string | null;
+  [key: string]: unknown;
+}
+
+export interface EventSalesReadiness {
+  state: EventSalesState;
+  revision: number;
+  path: EventBuyerCheckout | null;
+  readiness: Record<string, boolean>;
+  required: string[];
+  gatewayRefusal: unknown;
+  [key: string]: unknown;
+}
+
+export interface EventSalesPreflightResult {
+  ok: true;
+  preflight: { id: string; order_id: string; [key: string]: unknown };
+  reused: boolean;
+  [key: string]: unknown;
+}
+
+export interface EventSalesTransitionResult {
+  ok: boolean;
+  changed: boolean;
+  state: EventSalesState;
+  revision: number;
+  from?: EventSalesState;
+  meta: Record<string, unknown>;
+  [key: string]: unknown;
+}
+
+export interface EventBookingFee {
+  bookingFeeMinor: number | null;
+  currency: string | null;
+  confirmedOrders: number;
+  editable: boolean;
+  available: boolean;
+  reason: string | null;
+  [key: string]: unknown;
+}
+
+export interface EventDiscountCode {
+  id: string;
+  code: string;
+  kind: 'percent' | 'amount';
+  percent: number | null;
+  amountMinor: number | null;
+  currency: string | null;
+  startsAt: number | null;
+  endsAt: number | null;
+  maxUses: number | null;
+  state: string;
+  status: string;
+  uses: number;
+  discountGivenMinor: number;
+  createdAt: number;
+  updatedAt: number;
+  [key: string]: unknown;
+}
+
+export interface CreateEventDiscountCodeParams {
+  code: string;
+  kind: 'percent' | 'amount';
+  /** Required when `kind` is `percent`. */
+  percent?: number;
+  /** Required when `kind` is `amount`. */
+  amountMinor?: number;
+  startsAt?: number | null;
+  endsAt?: number | null;
+  maxUses?: number | null;
+  active?: boolean;
+}
+
+export interface UpdateEventDiscountCodeParams extends Partial<CreateEventDiscountCodeParams> {
+  /** Pause a code, or make it active again. */
+  state?: 'active' | 'paused';
+}
+
 export class Events {
   #http: HttpClient;
 
@@ -83,6 +215,7 @@ export class Events {
         limit: options.limit,
         cursor: options.cursor,
         ...(options.counts === false ? { counts: '0' } : {}),
+        seriesKey: options.seriesKey,
       },
     });
   }
@@ -189,6 +322,10 @@ export class Events {
     return this.#http.post(`/v1/events/${encodeURIComponent(eventKey)}/close`);
   }
 
+  /**
+   * Open a paused event's sales again. A date its season cancelled never opens again:
+   * `409 season_date_cancelled`.
+   */
   reopen(eventKey: string): Promise<SalesAliasResult> {
     return this.#http.post(`/v1/events/${encodeURIComponent(eventKey)}/reopen`);
   }
@@ -243,5 +380,111 @@ export class Events {
 
   retrieveLog(eventKey: string, options: { limit?: number; before?: number } = {}): Promise<EventLogPage> {
     return this.#http.get(`/v1/events/${encodeURIComponent(eventKey)}/log`, { query: options });
+  }
+
+  /** Retrieve who takes payment for an event, and what blocks changing it. */
+  retrieveEventBuyerCheckout(eventKey: string): Promise<EventBuyerCheckoutState> {
+    return this.#http.get(`/v1/events/${encodeURIComponent(eventKey)}/buyer-checkout`);
+  }
+
+  /**
+   * Choose SeatLayer checkout or your own for an event. Compare-and-set on
+   * `expectedRevision`; sent once, so read the state back after an unknown outcome.
+   */
+  replaceEventBuyerCheckout(eventKey: string, params: {
+    buyerCheckout: EventBuyerCheckout;
+    expectedRevision: number;
+  }): Promise<EventBuyerCheckoutReplaceResult> {
+    return this.#http.put(`/v1/events/${encodeURIComponent(eventKey)}/buyer-checkout`, { body: params });
+  }
+
+  /** Retrieve an event's payment gateway and the connected gateways it could use. */
+  retrieveEventPaymentGateway(eventKey: string, options: {
+    /** Check the options against this currency instead of the event's. */
+    currency?: string;
+  } = {}): Promise<EventPaymentGatewayOptions> {
+    return this.#http.get(`/v1/events/${encodeURIComponent(eventKey)}/payment-gateway`, {
+      query: { currency: options.currency },
+    });
+  }
+
+  /** Assign one of the organisation's connected gateways to an event. Sent once. */
+  replaceEventPaymentGateway(eventKey: string, params?: {
+    connectionId?: string | null;
+    provider?: string | null;
+  }): Promise<EventPaymentGatewayAssignment> {
+    return this.#http.put(`/v1/events/${encodeURIComponent(eventKey)}/payment-gateway`, { body: params });
+  }
+
+  /** Retrieve what an event still needs before its next sales step. */
+  retrieveEventSalesReadiness(eventKey: string): Promise<EventSalesReadiness> {
+    return this.#http.get(`/v1/events/${encodeURIComponent(eventKey)}/sales/readiness`);
+  }
+
+  /** Record a test order as the event's sales preflight. Sent once. */
+  preflightEventSales(eventKey: string, params: { orderId: string }): Promise<EventSalesPreflightResult> {
+    return this.#http.post(`/v1/events/${encodeURIComponent(eventKey)}/sales/preflight`, { body: params });
+  }
+
+  /**
+   * Move an event's sales to testable, live, paused or ended. Compare-and-set
+   * on `expectedRevision`; sent once. A date its season cancelled never opens again:
+   * moving it to `testable` or `live` answers `409 season_date_cancelled`.
+   */
+  transitionEventSales(eventKey: string, params: {
+    to: EventSalesState;
+    expectedRevision: number;
+    reason?: string;
+  }): Promise<EventSalesTransitionResult> {
+    return this.#http.post(`/v1/events/${encodeURIComponent(eventKey)}/sales/transition`, { body: params });
+  }
+
+  /** Retrieve an event's booking fee. */
+  retrieveEventBookingFee(eventKey: string): Promise<EventBookingFee> {
+    return this.#http.get(`/v1/events/${encodeURIComponent(eventKey)}/booking-fee`);
+  }
+
+  /** Set an event's booking fee in minor units, or clear it with `null`. Sent once. */
+  replaceEventBookingFee(eventKey: string, params: { bookingFeeMinor: number | null }): Promise<EventBookingFee> {
+    return this.#http.put(`/v1/events/${encodeURIComponent(eventKey)}/booking-fee`, { body: params });
+  }
+
+  /** List an event's discount codes. */
+  listEventDiscountCodes(eventKey: string): Promise<{ codes: EventDiscountCode[] }> {
+    return this.#http.get(`/v1/events/${encodeURIComponent(eventKey)}/discount-codes`);
+  }
+
+  /** Create a discount code for an event. Sent once. */
+  createEventDiscountCode(
+    eventKey: string,
+    params: CreateEventDiscountCodeParams,
+  ): Promise<{ code: EventDiscountCode }> {
+    return this.#http.post(`/v1/events/${encodeURIComponent(eventKey)}/discount-codes`, { body: params });
+  }
+
+  /** Change or pause a discount code. Sent once. */
+  updateEventDiscountCode(
+    eventKey: string,
+    codeId: string,
+    params: UpdateEventDiscountCodeParams,
+  ): Promise<{ code: EventDiscountCode }> {
+    return this.#http.patch(
+      `/v1/events/${encodeURIComponent(eventKey)}/discount-codes/${encodeURIComponent(codeId)}`,
+      { body: params },
+    );
+  }
+
+  /** End a discount code for good. */
+  endEventDiscountCode(eventKey: string, codeId: string): Promise<{ code: EventDiscountCode }> {
+    return this.#http.post(
+      `/v1/events/${encodeURIComponent(eventKey)}/discount-codes/${encodeURIComponent(codeId)}/end`,
+    );
+  }
+
+  /** Delete a discount code nobody has used. Resolves with nothing (204). Sent once. */
+  deleteEventDiscountCode(eventKey: string, codeId: string): Promise<void> {
+    return this.#http.delete(
+      `/v1/events/${encodeURIComponent(eventKey)}/discount-codes/${encodeURIComponent(codeId)}`,
+    );
   }
 }

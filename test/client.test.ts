@@ -1263,6 +1263,12 @@ describe('pagination', () => {
     expect(call(0).url).toContain('counts=0');
   });
 
+  it('filters events by series', async () => {
+    const { sdk, call } = client([{ status: 200, body: { events: [] } }]);
+    await sdk.events.list({ seriesKey: 'ser a/b', limit: 10 });
+    expect(new URL(call(0).url).searchParams.get('seriesKey')).toBe('ser a/b');
+  });
+
   it('keeps counts on a single explicit page', async () => {
     const { sdk, call } = client([{ status: 200, body: { events: [] } }]);
     await sdk.events.list({ limit: 10 });
