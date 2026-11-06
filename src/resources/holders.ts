@@ -219,7 +219,10 @@ export class Holders {
     );
   }
 
-  /** Send some of a holder's season tickets to an email. Retried safely with one Idempotency-Key. */
+  /**
+   * Send some of a holder's season tickets to an email. Retried safely with one Idempotency-Key.
+   * Turning customer sends off in Settings › Ticket site doesn't stop your server; cut-offs still apply.
+   */
   createHolderTransfer(
     holderRef: string,
     params: CreateHolderTransferParams,
@@ -249,7 +252,10 @@ export class Holders {
     );
   }
 
-  /** Give back a holder's seat on one date, one per ticket. Retried safely with one Idempotency-Key. */
+  /**
+   * Give back a holder's seat on one date, one per ticket. Retried safely with one Idempotency-Key.
+   * Turning give-backs off in Settings › Ticket site doesn't stop your server; cut-offs still apply.
+   */
   createHolderReturn(
     holderRef: string,
     params: CreateHolderReturnParams,

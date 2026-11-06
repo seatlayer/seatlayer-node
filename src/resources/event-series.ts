@@ -117,6 +117,10 @@ export interface EventSeriesDatesAdded {
 
 export interface UpdateEventSeriesParams {
   name?: string;
+  /**
+   * Only the categories whose price changes (for a tiered category, only the tiers sent), each as
+   * `PUT /v1/events/:key/pricing` takes it. Every price left out keeps each date's own value.
+   */
   prices?: {
     categories: Array<{
       key: string;
@@ -186,6 +190,7 @@ export class EventSeriesResource {
 
   /**
    * Change the name, prices or sales of every upcoming date in a series.
+   * Send only the prices that change: each date keeps its own price for the rest.
    * Retried safely with one Idempotency-Key.
    */
   updateEventSeries(

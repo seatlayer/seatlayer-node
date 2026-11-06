@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- `updateEventSeries` sends only the prices that change: each date keeps its own price for every
+  category (or tier) left out, so weekend and weekday prices keep their difference.
+- A season's `transferCutoffHours` / `returnCutoffHours` of `null` means the club default
+  (Settings › Ticket site), or until the date starts when the club has none.
+- `createHolderTransfer` and `createHolderReturn` are not stopped by the club's customer switches
+  in Settings › Ticket site; cut-offs still apply.
 - Cancelling a date voids its tickets as a `date_cancel_void` job (`SeasonBulkJobKind`), named
   by `seasonDateCancelVoidJobId(amendmentId)` (`sbj_void_…`); `season.ticket.voided` says
   `date_cancelled` for each season ticket it voids.

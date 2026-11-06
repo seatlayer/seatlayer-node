@@ -45,9 +45,12 @@ export interface Season {
   audience: 'embed_only' | 'public';
   /** Who takes the money: `seatlayer` (SeatLayer checkout) or `server` (your own). Null until you choose. */
   checkoutMode: 'seatlayer' | 'server' | null;
-  /** Hours before a date starts that its tickets stop being sent to others; null is until it starts. */
+  /**
+   * Hours before a date starts that its tickets stop being sent to others. Null: the season has no
+   * cut-off of its own, so the club default (Settings › Ticket site) applies, or until the date starts.
+   */
   transferCutoffHours: number | null;
-  /** Hours before a date starts that a holder can no longer give a seat back on it; null is until it starts. */
+  /** Hours before a date starts that a holder can no longer give a seat back on it. Null: the club default, as above. */
   returnCutoffHours: number | null;
   revision: number;
   structureState: SeasonStructureState;
@@ -684,9 +687,9 @@ export interface UpdateSeasonParams {
   edition?: string | null;
   /** Who takes the money. It cannot go back to undecided, and it is fixed once a live booking exists. */
   checkoutMode?: 'seatlayer' | 'server';
-  /** Hours before a date starts that its tickets stop being sent to others (0 to 720); `null` means until it starts. */
+  /** Hours before a date starts that its tickets stop being sent to others (0 to 720); `null` uses the club default. */
   transferCutoffHours?: number | null;
-  /** Hours before a date starts that a holder can no longer give a seat back (0 to 720); `null` means until it starts. */
+  /** Hours before a date starts that a holder can no longer give a seat back (0 to 720); `null` uses the club default. */
   returnCutoffHours?: number | null;
   /** `public` lists the season on your SeatLayer website; an ended season cannot become public (`409 sales_ended`). */
   audience?: 'embed_only' | 'public';
