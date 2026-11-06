@@ -322,6 +322,10 @@ export class Events {
     return this.#http.post(`/v1/events/${encodeURIComponent(eventKey)}/close`);
   }
 
+  /**
+   * Open a paused event's sales again. A date its season cancelled never opens again:
+   * `409 season_date_cancelled`.
+   */
   reopen(eventKey: string): Promise<SalesAliasResult> {
     return this.#http.post(`/v1/events/${encodeURIComponent(eventKey)}/reopen`);
   }
@@ -424,7 +428,8 @@ export class Events {
 
   /**
    * Move an event's sales to testable, live, paused or ended. Compare-and-set
-   * on `expectedRevision`; sent once.
+   * on `expectedRevision`; sent once. A date its season cancelled never opens again:
+   * moving it to `testable` or `live` answers `409 season_date_cancelled`.
    */
   transitionEventSales(eventKey: string, params: {
     to: EventSalesState;

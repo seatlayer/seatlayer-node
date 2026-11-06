@@ -1243,7 +1243,8 @@ export class Seasons {
   /**
    * Postpone, reschedule, replace or cancel one date. A `cancel` also voids every live ticket for
    * the date as a `date_cancel_void` job, `seasonDateCancelVoidJobId(amendment.amendmentId)`;
-   * with a `refund`, `refundJob` names the refund job.
+   * with a `refund`, `refundJob` names the refund job. A cancelled date can't be moved
+   * (`reschedule`), postponed or replaced: `409 performance_cancelled`.
    */
   createSeasonAmendment(
     seasonKey: string,
@@ -1477,7 +1478,7 @@ export class Seasons {
 
   /**
    * Mark a performance past so it stops blocking new Season sales.
-   * Retried safely with one Idempotency-Key.
+   * Retried safely with one Idempotency-Key. A cancelled date answers `409 performance_cancelled`.
    */
   markSeasonPerformancePast(
     seasonKey: string,

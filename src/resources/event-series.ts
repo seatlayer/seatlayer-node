@@ -128,6 +128,11 @@ export interface UpdateEventSeriesParams {
       tiers?: Array<{ id: string; price: number }>;
     }>;
   };
+  /**
+   * `on` never opens a date its season cancelled: that date is a failed item of the job
+   * (`season_date_cancelled`), counted in `job.failed` but not in `failedDates`, which are the
+   * dates that could not be made. The run's other dates open.
+   */
   sales?: 'on' | 'off';
 }
 

@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- A date its season cancelled never opens again: `transitionEventSales` to `testable` or `live`
+  and `reopen` answer `409 season_date_cancelled`, and `updateEventSeries` with `sales: 'on'`
+  leaves it closed as a failed item of the job (`season_date_cancelled`; not in `failedDates`).
+- `createSeasonAmendment` refuses to move (`reschedule`), postpone or replace a cancelled date,
+  and `markSeasonPerformancePast` refuses to mark one as taken place: `409 performance_cancelled`.
 - `updateEventSeries` sends only the prices that change: each date keeps its own price for every
   category (or tier) left out, so weekend and weekday prices keep their difference.
 - A season's `transferCutoffHours` / `returnCutoffHours` of `null` means the club default
