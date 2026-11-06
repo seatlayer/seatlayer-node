@@ -784,6 +784,11 @@ describe('Season organizer resource', () => {
         body: { sourceSeasonId: 'sea_0', successorPlanActivationId: 'spa_1' }, idempotencyKey: 'from-season-1',
         response: { status: 202, body: bringAcross }, returns: bringAcross,
       },
+      {
+        name: 'createSeasonRenewalNotices for one offer batch',
+        run: (sdk) => sdk.seasons.createSeasonRenewalNotices('sea_a/b', { batchId: 'srb_1' }),
+        method: 'POST', path: '/v1/seasons/sea_a%2Fb/renewal-notices', body: { batchId: 'srb_1' },
+      },
     ]);
   });
 

@@ -1549,7 +1549,11 @@ export class Seasons {
    * Email renewal invitations now and schedule reminders before the deadline. Leave `offerIds`
    * out to email every open offer; more than 20,000 ids answers `422 too_many_offer_ids`.
    */
-  createSeasonRenewalNotices(seasonKey: string, params?: { offerIds?: string[] }): Promise<{
+  createSeasonRenewalNotices(seasonKey: string, params?: {
+    offerIds?: string[];
+    /** Instead of `offerIds`: every open offer one `createSeasonRenewalOffers` batch made (its `batchId`). */
+    batchId?: string;
+  }): Promise<{
     scheduled: number; withoutEmail: number; [key: string]: unknown;
   }> {
     return this.#http.post(`/v1/seasons/${pathPart(seasonKey)}/renewal-notices`, { body: params });

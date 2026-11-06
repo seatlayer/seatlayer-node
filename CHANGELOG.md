@@ -64,6 +64,7 @@
 - `createSeasonRenewalOffers` resolves with `{ offers }` for 100 contracts or fewer, and with `{ job, batchId }` (`SeasonRenewalOfferJob`, a 202) above that: a `renewal_run` job makes the offers. Follow it with `retrieveSeasonBulkJob`, then page the offers with `listSeasonRenewalOffers`.
 - `createSeasonHolderImportFromSeason` resolves with `{ job }` (a 202) when a commit brings across more than 100 holders: a `holder_import` job, whose `summary` has the same counts when it completes. `SeasonBulkJobKind` adds `holder_import`, and `SeasonBulkJobDetail` has `summary`. Both creates can refuse with `409 job_mismatch` or `503 season_not_configured`, and the bring-across with `503 job_busy`.
 - `createSeasonRenewalNotices` takes up to 20,000 offer ids; more answers `422 too_many_offer_ids`.
+- `createSeasonRenewalNotices` takes `batchId` instead of `offerIds`: email every open offer one `createSeasonRenewalOffers` batch made, such as the batch a `renewal_run` job made.
 
 ## 0.8.0 (2026-09-10)
 
