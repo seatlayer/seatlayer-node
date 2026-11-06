@@ -14,6 +14,8 @@ import {
   type SeasonRenewalOffer,
   type SeasonRenewalOfferJob,
   type SeasonRenewalQuote,
+  type SeasonResult,
+  type SeasonSingleTicketDates,
   type SeasonValidation,
 } from '../src/index.js';
 
@@ -806,6 +808,40 @@ describe('Season organizer resource', () => {
       .toEqualTypeOf<string | null>();
     expectTypeOf<Awaited<ReturnType<typeof sdk.seasons.retrieveSeasonHostedRenewals>>['nextCursor']>()
       .toEqualTypeOf<string | null>();
+  });
+
+  it('sends singleTickets on create and update, and returns the dates it opened', async () => {
+    const singleTicketDates = {
+      direction: 'open', opened: ['ev_1'], closed: [],
+      notOpened: [{ eventKey: 'ev_2', name: 'Night 2', salesState: 'setup', unmet: ['buyerCheckout'] }],
+      jobId: null,
+    };
+    const updated = { season: { key: 'sea_1', singleTickets: true, plans: [] }, singleTicketDates };
+    await expectOperations([
+      {
+        name: 'createSeason with single tickets',
+        run: (sdk) => sdk.seasons.createSeason({
+          name: 'Series', eventKeys: ['ev_1', 'ev_2'], singleTickets: true,
+        }, { idempotencyKey: 'create-singles' }),
+        method: 'POST', path: '/v1/seasons',
+        body: { name: 'Series', eventKeys: ['ev_1', 'ev_2'], singleTickets: true }, idempotencyKey: 'create-singles',
+        response: { status: 201, body: { season: { key: 'sea_1', singleTickets: true, plans: [] } } },
+      },
+      {
+        name: 'updateSeason turning single tickets on',
+        run: (sdk) => sdk.seasons.updateSeason('sea_1', { expectedRevision: 5, singleTickets: true }, {
+          idempotencyKey: 'singles-on',
+        }),
+        method: 'PATCH', path: '/v1/seasons/sea_1', body: { expectedRevision: 5, singleTickets: true },
+        idempotencyKey: 'singles-on', response: { status: 200, body: updated }, returns: updated,
+      },
+    ]);
+    const sdk = new SeatLayer({ secretKey: 'sk_test_abc', fetch: stubFetch([]).fetch });
+    expectTypeOf(sdk.seasons.updateSeason).returns.resolves.toEqualTypeOf<SeasonResult>();
+    expectTypeOf(sdk.seasons.resumeSeasonSales).returns.resolves.toEqualTypeOf<SeasonResult>();
+    expectTypeOf<SeasonResult['singleTicketDates']>().toEqualTypeOf<SeasonSingleTicketDates | undefined>();
+    expectTypeOf<SeasonResult['season']['singleTickets']>().toEqualTypeOf<boolean>();
+    expectTypeOf<'season_singles'>().toMatchTypeOf<SeasonBulkJob['kind']>();
   });
 
   it('retries the release of lapsed offers with one key', async () => {

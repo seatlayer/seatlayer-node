@@ -58,16 +58,45 @@ export interface Season {
   activatedAt: number | null;
   closedAt: number | null;
   buyerRehearsalReady: boolean;
+  /** Each date also sells its own single tickets. False, the default, is Season only. */
+  singleTickets: boolean;
+  /** With `singleTickets` on and the season on sale: the dates whose own sales are not open. */
+  singleTicketsNotOpen?: Array<{ eventKey: string; name: string; salesState: string; [key: string]: unknown }>;
 }
 
 export interface SeasonDetail extends Season {
   plans: SeasonPlan[];
 }
 
+/** What opening or stopping the dates' single ticket sales did. */
+export interface SeasonSingleTicketDates {
+  direction: 'open' | 'close';
+  /** Dates whose single sales this opened. */
+  opened: string[];
+  /** Dates whose single sales this stopped; orders already made stay. */
+  closed: string[];
+  /** Dates that could not open, with the sales readiness checks each lacks. */
+  notOpened: Array<{
+    eventKey: string; name: string; salesState: 'setup' | 'testable' | 'live' | 'paused' | 'ended';
+    unmet: string[]; [key: string]: unknown;
+  }>;
+  /** A `season_singles` job doing them when the season has more than 12 upcoming dates. */
+  jobId: string | null;
+  [key: string]: unknown;
+}
+
+/** A season answer. A change that opened or stopped the dates' single sales says which in `singleTicketDates`. */
+export interface SeasonResult {
+  season: SeasonDetail;
+  singleTicketDates?: SeasonSingleTicketDates;
+}
+
 /** What opening sales answers: the season and anything advised but not required. */
 export interface SeasonSalesOpenResult {
   season: SeasonDetail;
   warnings: Array<{ code: 'checkout_test_missing' | (string & {}); message: string; [key: string]: unknown }>;
+  /** With `singleTickets` on: which dates opened their own sales. */
+  singleTicketDates?: SeasonSingleTicketDates;
 }
 
 export interface SeasonCompatibilityIssue {
@@ -125,6 +154,8 @@ export interface SeasonSelectionParams {
 export interface CreateSeasonParams extends SeasonSelectionParams {
   name: string;
   edition?: string | null;
+  /** Each date also sells its own single tickets once the season is on sale. Default false: Season only. */
+  singleTickets?: boolean;
 }
 
 export interface CreateSeasonPlanParams extends SeasonSelectionParams {
@@ -553,7 +584,7 @@ export interface SeasonDateJob {
 
 export type SeasonBulkJobKind =
   | 'date_added' | 'date_removed' | 'renewal_run' | 'lapsed_release' | 'bulk_refund' | 'holder_import'
-  | 'series_dates' | 'series_update';
+  | 'series_dates' | 'series_update' | 'season_singles';
 
 export type SeasonBulkJobState = 'planning' | 'running' | 'completed' | 'failed' | 'cancelled';
 
@@ -633,6 +664,8 @@ export interface UpdateSeasonParams {
   returnCutoffHours?: number | null;
   /** `public` lists the season on your SeatLayer website; an ended season cannot become public (`409 sales_ended`). */
   audience?: 'embed_only' | 'public';
+  /** Turned on while on sale, each upcoming date's own sales open through its readiness checks; off, they stop. */
+  singleTickets?: boolean;
 }
 
 export interface SeasonStoppedOrder {
@@ -926,7 +959,7 @@ export class Seasons {
     seasonKey: string,
     params: UpdateSeasonParams,
     options: { idempotencyKey?: string; signal?: AbortSignal } = {},
-  ): Promise<{ season: SeasonDetail }> {
+  ): Promise<SeasonResult> {
     return this.#http.mutationWithHeaderReplay('PATCH', `/v1/seasons/${pathPart(seasonKey)}`, {
       body: params, idempotencyKey: options.idempotencyKey, signal: options.signal,
     });
@@ -999,21 +1032,23 @@ export class Seasons {
 
   /**
    * Open sales. `warnings` says what is advised but not required, such as
-   * `checkout_test_missing` until a checkout test or rehearsal has passed.
+   * `checkout_test_missing` until a checkout test or rehearsal has passed. With
+   * `singleTickets` on, `singleTicketDates` says which dates opened their own sales.
    */
   openSeasonSales(seasonKey: string, expectedRevision: number): Promise<SeasonSalesOpenResult> {
     return this.#sales(seasonKey, 'open', expectedRevision) as Promise<SeasonSalesOpenResult>;
   }
 
-  pauseSeasonSales(seasonKey: string, expectedRevision: number): Promise<{ season: SeasonDetail }> {
+  pauseSeasonSales(seasonKey: string, expectedRevision: number): Promise<SeasonResult> {
     return this.#sales(seasonKey, 'pause', expectedRevision);
   }
 
-  resumeSeasonSales(seasonKey: string, expectedRevision: number): Promise<{ season: SeasonDetail }> {
+  /** Resume sales. With `singleTickets` on, `singleTicketDates` says which dates opened their own sales. */
+  resumeSeasonSales(seasonKey: string, expectedRevision: number): Promise<SeasonResult> {
     return this.#sales(seasonKey, 'resume', expectedRevision);
   }
 
-  endSeasonSales(seasonKey: string, expectedRevision: number): Promise<{ season: SeasonDetail }> {
+  endSeasonSales(seasonKey: string, expectedRevision: number): Promise<SeasonResult> {
     return this.#sales(seasonKey, 'end', expectedRevision);
   }
 
@@ -1722,7 +1757,7 @@ export class Seasons {
   }
 
   #sales(seasonKey: string, action: 'open' | 'pause' | 'resume' | 'end', expectedRevision: number) {
-    return this.#http.post<{ season: SeasonDetail }>(
+    return this.#http.post<SeasonResult>(
       `/v1/seasons/${pathPart(seasonKey)}/sales/${action}`,
       { body: { expectedRevision } },
     );

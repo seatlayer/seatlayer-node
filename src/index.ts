@@ -160,6 +160,8 @@ export {
   type SeasonPriceList,
   type SeasonPublishResult,
   type SeasonSalesOpenResult,
+  type SeasonResult,
+  type SeasonSingleTicketDates,
   type SeasonSalesReport,
   type SeasonSeatCounts,
   type SeasonSeatsReport,
