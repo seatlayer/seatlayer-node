@@ -147,7 +147,9 @@ export class EventSeriesResource {
 
   /**
    * Plan an event series from a schedule (`dryRun`), or create its dates as a
-   * background job. Retried safely with one Idempotency-Key.
+   * background job. Retried safely with one Idempotency-Key. A series from an
+   * event that never started and was given up answers `409 create_abandoned`
+   * for that key every time: send the request again with a new key.
    */
   createEventSeries(
     params: CreateEventSeriesParams,

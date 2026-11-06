@@ -1,6 +1,7 @@
 import { describe, expect, expectTypeOf, it, vi } from 'vitest';
 import {
   SeatLayer,
+  SeatLayerConflictError,
   SeatLayerError,
   SeatLayerRateLimitError,
   type WebhookEventName,
@@ -475,6 +476,21 @@ describe('Event series resource', () => {
       body: { fromEventKey: 'lighthouse-keeper', schedule }, idempotencyKey: 'series-2',
       response: { status: 202, body: { series: { seriesKey: 'ser_2', firstEventKey: 'lighthouse-keeper' }, jobId: 'job_4' } },
     }]);
+  });
+
+  it('answers a given-up series create as 409 create_abandoned, once, with the message to use a new key', async () => {
+    const stub = stubFetch([{ status: 409, body: {
+      error: 'create_abandoned', code: 'create_abandoned',
+      message: 'This series never started and was given up when another request came for the event. Send the request again with a new Idempotency-Key.',
+    } }]);
+    const sdk = new SeatLayer({ secretKey: 'sk_test_abc', fetch: stub.fetch, maxRetries: 2 });
+    const schedule = { rule: 'daily' as const, from: '2026-11-06', until: '2026-11-08', times: ['20:00'] };
+    const error = await sdk.eventSeries.createEventSeries({ fromEventKey: 'ev_1', schedule }, { idempotencyKey: 'series-3' })
+      .catch((caught: unknown) => caught);
+    expect(error).toBeInstanceOf(SeatLayerConflictError);
+    expect((error as SeatLayerConflictError).code).toBe('create_abandoned');
+    expect((error as SeatLayerConflictError).message).toMatch(/new Idempotency-Key/);
+    expect(stub.calls).toHaveLength(1);
   });
 
   it('maps all 5 event series operations', async () => {

@@ -193,7 +193,7 @@ export {
   type SeasonValidation,
   type WaitForSeasonLifecycleOptions,
 } from './resources/seasons.js';
-export { SeasonRenewalTimeoutError } from './resources/seasons.js';
+export { SeasonRenewalTimeoutError, seasonDateCancelVoidJobId, seasonHolderImportRowsPerCall } from './resources/seasons.js';
 export type {
   AccessLink,
   AccessLinkReveal,

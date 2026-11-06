@@ -82,6 +82,11 @@ export interface SeasonSingleTicketDates {
   }>;
   /** A `season_singles` job doing them when the season has more than 12 upcoming dates. */
   jobId: string | null;
+  /**
+   * Why that job could not start, in the rare case it cannot. The change still stands, and the
+   * dates wait in `singleTicketsNotOpen` until you send `singleTickets: true` again.
+   */
+  jobRefused?: string;
   [key: string]: unknown;
 }
 
@@ -586,7 +591,26 @@ export interface SeasonDateJob {
 
 export type SeasonBulkJobKind =
   | 'date_added' | 'date_removed' | 'renewal_run' | 'lapsed_release' | 'bulk_refund' | 'holder_import'
-  | 'series_dates' | 'series_update' | 'season_singles';
+  | 'series_dates' | 'series_update' | 'season_singles' | 'date_cancel_void';
+
+/**
+ * The job voiding a cancelled date's tickets: `sbj_void_` and the cancel's `amendmentId`.
+ * Cancelling a date starts it (a repeated cancel joins it); follow it with
+ * `retrieveSeasonBulkJob`. Each season ticket it voids is told by `season.ticket.voided` with
+ * reason `date_cancelled`.
+ */
+export function seasonDateCancelVoidJobId(amendmentId: string): string {
+  return `sbj_void_${amendmentId}`;
+}
+
+/**
+ * The most rows one `createSeasonHolderImport` call takes for a package of `dates` dates. Each
+ * row is fenced on every date: 100 up to 20 dates, then `floor(2300 / (dates + 3))`, 43 at 50.
+ * A call with more answers `422 invalid_rows` with `maxRows`.
+ */
+export function seasonHolderImportRowsPerCall(dates: number): number {
+  return Math.max(1, Math.min(100, Math.floor(2300 / (Math.max(1, dates) + 3))));
+}
 
 export type SeasonBulkJobState = 'planning' | 'running' | 'completed' | 'failed' | 'cancelled';
 
@@ -1114,6 +1138,11 @@ export class Seasons {
     return this.#http.post(`/v1/seasons/${pathPart(seasonKey)}/buyer-rehearsals/validate`);
   }
 
+  /**
+   * Import incumbent holders, as a dry run or for real. A call takes at most
+   * `seasonHolderImportRowsPerCall(dates)` rows (100 up to 20 dates); more answers
+   * `422 invalid_rows` with `maxRows` on the error's `body`.
+   */
   createSeasonHolderImport(
     seasonKey: string,
     params: { successorPlanActivationId: string; dryRun?: boolean; rows: SeasonHolderImportRow[] },
@@ -1208,6 +1237,11 @@ export class Seasons {
     return this.#http.get(`/v1/seasons/${pathPart(seasonKey)}/occurrences`);
   }
 
+  /**
+   * Postpone, reschedule, replace or cancel one date. A `cancel` also voids every live ticket for
+   * the date as a `date_cancel_void` job, `seasonDateCancelVoidJobId(amendment.amendmentId)`;
+   * with a `refund`, `refundJob` names the refund job.
+   */
   createSeasonAmendment(
     seasonKey: string,
     params: CreateSeasonAmendmentParams,

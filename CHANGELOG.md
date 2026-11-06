@@ -2,6 +2,18 @@
 
 ## Unreleased
 
+- Cancelling a date voids its tickets as a `date_cancel_void` job (`SeasonBulkJobKind`), named
+  by `seasonDateCancelVoidJobId(amendmentId)` (`sbj_void_…`); `season.ticket.voided` says
+  `date_cancelled` for each season ticket it voids.
+- A Season package holds 2 to 50 dates. `seasonHolderImportRowsPerCall(dates)` gives the most
+  rows one `createSeasonHolderImport` call takes (100 up to 20 dates, 43 at 50); a call with
+  more answers `422 invalid_rows` with `maxRows`.
+- `SeasonSingleTicketDates.jobRefused` says why a `season_singles` job could not start; the
+  change stands, and sending `singleTickets: true` again opens any date still not open. An
+  `updateSeason` retried with its first key and `expectedRevision` is not applied twice.
+- A series create given up for its key answers `409 create_abandoned` with a message to send
+  it again with a new idempotency key.
+
 - `createSeason` takes `mode` (`live` or `test`), as `POST /v1/seasons` already allows.
 - Adds 39 Season operations (87 in all): performances and package prices,
   `publishSeason`, checkout tests, import from a previous season, occurrence

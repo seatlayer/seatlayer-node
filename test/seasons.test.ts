@@ -3,6 +3,9 @@ import {
   SeatLayer,
   SeatLayerError,
   SeatLayerRateLimitError,
+  SeatLayerValidationError,
+  seasonDateCancelVoidJobId,
+  seasonHolderImportRowsPerCall,
   type SeasonAmendment,
   type SeasonBulkJobDetail,
   type SeasonHold,
@@ -1053,6 +1056,23 @@ describe('Season organizer resource', () => {
       .toEqualTypeOf<SeasonRenewalCheckoutStarted>();
     expectTypeOf(sdk.holders.createHolderRenewalCheckout).returns.resolves
       .toEqualTypeOf<SeasonRenewalCheckoutStarted>();
+  });
+
+  it('names the job voiding a cancelled date, and sizes a holder import call by its dates', async () => {
+    expect(seasonDateCancelVoidJobId('amd_1')).toBe('sbj_void_amd_1');
+    expectTypeOf<'date_cancel_void'>().toMatchTypeOf<SeasonBulkJob['kind']>();
+    expectTypeOf<SeasonSingleTicketDates['jobRefused']>().toEqualTypeOf<string | undefined>();
+    expect([1, 20, 21, 50].map(seasonHolderImportRowsPerCall)).toEqual([100, 100, 95, 43]);
+
+    const stub = stubFetch([{ status: 422, body: {
+      error: 'invalid_rows', code: 'invalid_rows', message: 'At most 43 rows a call for this package.', maxRows: 43,
+    } }]);
+    const sdk = new SeatLayer({ secretKey: 'sk_test_abc', fetch: stub.fetch });
+    const error = await sdk.seasons.createSeasonHolderImport('sea_1', { successorPlanActivationId: 'spa_1', rows: [] })
+      .catch((caught: unknown) => caught);
+    expect(error).toBeInstanceOf(SeatLayerValidationError);
+    expect((error as SeatLayerValidationError).code).toBe('invalid_rows');
+    expect((error as SeatLayerValidationError).body.maxRows).toBe(43);
   });
 
   it('exposes exactly 87 season operations, plus the polling helpers and the import alias', () => {
