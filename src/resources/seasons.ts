@@ -154,6 +154,8 @@ export interface SeasonSelectionParams {
 export interface CreateSeasonParams extends SeasonSelectionParams {
   name: string;
   edition?: string | null;
+  /** The season's mode, `live` or `test`; every date must be in the same mode. */
+  mode?: 'live' | 'test';
   /** Each date also sells its own single tickets once the season is on sale. Default false: Season only. */
   singleTickets?: boolean;
 }

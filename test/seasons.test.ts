@@ -828,6 +828,13 @@ describe('Season organizer resource', () => {
         response: { status: 201, body: { season: { key: 'sea_1', singleTickets: true, plans: [] } } },
       },
       {
+        name: 'createSeason in test mode',
+        run: (sdk) => sdk.seasons.createSeason({ name: 'Rehearsal', eventKeys: ['ev_1', 'ev_2'], mode: 'test' }, { idempotencyKey: 'create-test' }),
+        method: 'POST', path: '/v1/seasons',
+        body: { name: 'Rehearsal', eventKeys: ['ev_1', 'ev_2'], mode: 'test' }, idempotencyKey: 'create-test',
+        response: { status: 201, body: { season: { key: 'sea_2', singleTickets: false, plans: [] } } },
+      },
+      {
         name: 'updateSeason turning single tickets on',
         run: (sdk) => sdk.seasons.updateSeason('sea_1', { expectedRevision: 5, singleTickets: true }, {
           idempotencyKey: 'singles-on',

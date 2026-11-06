@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- `createSeason` takes `mode` (`live` or `test`), as `POST /v1/seasons` already allows.
 - Adds 39 Season operations (87 in all): performances and package prices,
   `publishSeason`, checkout tests, import from a previous season, occurrence
   inventory returns and reclaims, the holder list, season order refunds and
