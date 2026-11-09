@@ -133,6 +133,14 @@ export {
   type SeasonBulkJobCounts,
   type SeasonBulkJobDetail,
   type SeasonBulkJobKind,
+  type SeasonBlock,
+  type SeasonBlockCounts,
+  type SeasonBlockJobAnswer,
+  type SeasonBlockReleaseScope,
+  type SeasonSeatSelection,
+  type SeasonDateLeavePending,
+  type SetAsideSeasonBlockParams,
+  type ReleaseSeasonBlockParams,
   type SeasonBulkJobState,
   type SeasonRefundJobSummary,
   type SeasonHolder,
@@ -168,6 +176,7 @@ export {
   type SeasonStoppedOrder,
   type SeasonPlanPublicationResult,
   type SeasonPublicationState,
+  type SeasonInventoryMode,
   type SeasonSalesState,
   type SeasonSelectionParams,
   type SeasonSourcePerformanceGroup,
@@ -193,7 +202,9 @@ export {
   type SeasonValidation,
   type WaitForSeasonLifecycleOptions,
 } from './resources/seasons.js';
-export { SeasonRenewalTimeoutError, seasonDateCancelVoidJobId, seasonHolderImportRowsPerCall } from './resources/seasons.js';
+export {
+  SeasonRenewalTimeoutError, isSeasonDateLeavePending, seasonDateCancelVoidJobId, seasonHolderImportRowsPerCall,
+} from './resources/seasons.js';
 export type {
   AccessLink,
   AccessLinkReveal,

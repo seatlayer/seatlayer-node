@@ -573,6 +573,8 @@ export type WebhookEventName =
   | 'season.performance.cancelled'
   | 'season.performance.rescheduled'
   | 'season.bulk_action.completed'
+  | 'season.block.ready'
+  | 'season.block.released'
   | 'season.order.paid'
   | 'season.order.refunded'
   | 'series.created'

@@ -561,9 +561,10 @@ describe('webhook event names', () => {
       'season.operation.partial_terminal', 'season.amendment.applied', 'season.performance.added',
       'season.performance.removed', 'season.performance.past', 'season.performance.postponed',
       'season.performance.cancelled', 'season.performance.rescheduled', 'season.bulk_action.completed',
+      'season.block.ready', 'season.block.released',
       'season.order.paid', 'season.order.refunded', 'series.created', 'series.dates_added',
     ] as const satisfies readonly WebhookEventName[];
-    expect(new Set(names).size).toBe(56);
+    expect(new Set(names).size).toBe(58);
     // Every member of the union is listed above: nothing is left over.
     expectTypeOf<Exclude<WebhookEventName, (typeof names)[number]>>().toEqualTypeOf<never>();
   });

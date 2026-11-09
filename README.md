@@ -338,6 +338,49 @@ For one holder, `holders.createHolderRenewalCheckout(holderRef, offerId, params)
 `holders.declineHolderRenewalOffer(holderRef, offerId, { reason })` do the same for an offer of
 theirs.
 
+### Season seats
+
+Season seats are the seats a season sets aside on every date before its sales open. A season
+buyer's hold then doesn't have to ask each date, and single-ticket buyers see those seats as
+unavailable. They are off for every season until you send `inventoryMode: 'block'` on
+`createSeason` or `updateSeason`. The season needs one package, and its sales must not have opened.
+
+```ts
+await seatlayer.seasons.updateSeason(seasonKey, { expectedRevision: revision, inventoryMode: 'block' });
+
+let { job } = await seatlayer.seasons.setAsideSeasonBlock(seasonKey, {
+  expectedRevision: revision,
+  keepForSingleTickets: { sectionIds: ['sec_family'] },
+});
+while (job.state === 'planning' || job.state === 'running') {
+  await new Promise((resolve) => setTimeout(resolve, 2000));
+  ({ job } = await seatlayer.seasons.retrieveSeasonBulkJob(seasonKey, job.jobId));
+}
+const { block } = await seatlayer.seasons.retrieveSeasonBlock(seasonKey);
+
+// Release unsold season seats to single sale. Leave out `at` to release now.
+await seatlayer.seasons.releaseSeasonBlock(seasonKey, {
+  expectedRevision: block.revision,
+  scope: { all: true },
+  at: '2026-12-01T09:00:00Z',
+});
+```
+
+- On an active season, block mode turns on by itself once every date has the seats, and
+  `season.block.ready` is sent once. On a draft, `publishSeason` turns it on.
+  `season.block.released` is sent once a release has run.
+- In block mode, a date cancel (`createSeasonAmendment`, kind `cancel`) or
+  `markSeasonPerformancePast` first takes the date off every season seat. Until that finishes the
+  answer is a `202`: check it with `isSeasonDateLeavePending(result)`, then send the same request
+  again after `Retry-After`.
+- Refusals come through `SeatLayerError` with `code`, and nothing changes. For example
+  `409 season_block_packages` (more than one package), `409 season_block_on_sale` (sales have
+  opened), or `409 block_not_ready` from `openSeasonSales` before block mode is on.
+- A partner's seat on a date (one a sales channel sells there) stays out of the block. It is
+  listed in `block.notFreeOnEveryDate` with reason `channel`.
+
+The [Season seats docs](https://docs.seatlayer.io/server-api/seasons/#season-seats) list every refusal.
+
 ## Private allocations
 
 `seatlayer.channels` manages event allocations and mints short-lived buyer access for a browser.
