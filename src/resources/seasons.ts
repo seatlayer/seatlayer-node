@@ -5,6 +5,8 @@ import type { CancelOrderParams, RefundOrderParams, ResendOrderTicketsParams } f
 export type SeasonStructureState = 'draft' | 'active' | 'closing' | 'closed' | 'archived';
 export type SeasonSalesState = 'closed' | 'open' | 'paused' | 'ended';
 export type SeasonPublicationState = 'draft' | 'published' | 'superseded';
+/** `block`: season seats are on for the season. `per_hold`, the default: they are off. */
+export type SeasonInventoryMode = 'block' | 'per_hold';
 
 export interface SeasonSourcePerformanceGroup {
   key: string;
@@ -65,6 +67,11 @@ export interface Season {
   singleTickets: boolean;
   /** With `singleTickets` on and the season on sale: the dates whose own sales are not open. */
   singleTicketsNotOpen?: Array<{ eventKey: string; name: string; salesState: string; [key: string]: unknown }>;
+  /**
+   * How the season's seats are decided: `block` once season seats are turned on for it
+   * (`inventoryMode: "block"` on create or update) or it sells from its block, else `per_hold`.
+   */
+  inventoryMode: SeasonInventoryMode;
 }
 
 export interface SeasonDetail extends Season {
@@ -166,6 +173,11 @@ export interface CreateSeasonParams extends SeasonSelectionParams {
   mode?: 'live' | 'test';
   /** Each date also sells its own single tickets once the season is on sale. Default false: Season only. */
   singleTickets?: boolean;
+  /**
+   * `block` turns season seats on for this season. Default `per_hold`. Anything else answers
+   * `422 invalid_inventory_mode`.
+   */
+  inventoryMode?: SeasonInventoryMode;
 }
 
 export interface CreateSeasonPlanParams extends SeasonSelectionParams {
@@ -594,7 +606,105 @@ export interface SeasonDateJob {
 
 export type SeasonBulkJobKind =
   | 'date_added' | 'date_removed' | 'renewal_run' | 'lapsed_release' | 'bulk_refund' | 'holder_import'
-  | 'series_dates' | 'series_update' | 'season_singles' | 'date_cancel_void';
+  | 'series_dates' | 'series_update' | 'season_singles' | 'date_cancel_void'
+  // Season seats: read by id with `retrieveSeasonBulkJob`, not listed by `listSeasonBulkJobs`.
+  | 'season_block_set_aside' | 'season_block_release';
+
+/** Seats kept for single tickets, or released: sections, categories or seats. */
+export interface SeasonSeatSelection {
+  sectionIds?: string[];
+  categoryKeys?: string[];
+  labels?: string[];
+}
+
+export interface SetAsideSeasonBlockParams {
+  /** The season's `revision` you read; another answers `409 revision_mismatch`. */
+  expectedRevision: number;
+  /** Left out of the block: kept for single tickets. The block is every other seat the packages price. */
+  keepForSingleTickets?: SeasonSeatSelection;
+}
+
+/** What a release covers: every unsold seat, or the sections, categories or seats named. */
+export type SeasonBlockReleaseScope =
+  | { all: true }
+  | { sectionIds: string[] }
+  | { categoryKeys: string[] }
+  | { labels: string[] };
+
+export interface ReleaseSeasonBlockParams {
+  expectedRevision: number;
+  scope: SeasonBlockReleaseScope;
+  /** Release on these dates only. Left out: every date still to come. */
+  eventKeys?: string[];
+  /** An ISO time to release at. Left out: now. */
+  at?: string;
+  reason?: string;
+}
+
+export interface SeasonBlockCounts {
+  setAside: number;
+  free: number;
+  /** In a cart, plus held for a renewal. */
+  held: number;
+  booked: number;
+  released: number;
+  [key: string]: unknown;
+}
+
+/** A season's seats set aside on every date (`retrieveSeasonBlock`). */
+export interface SeasonBlock {
+  /** How the season sells now: `block` once its seats are set aside and on. */
+  mode: 'block' | 'per_hold' | (string & {});
+  /** The set-aside. A draft's block is `ready` before Publish turns it on. */
+  state: 'none' | 'setting_aside' | 'ready' | 'failed' | (string & {});
+  revision: number;
+  counts: SeasonBlockCounts;
+  /** Seats a package prices that weren't free on every date, so stay single tickets. */
+  notFreeOnEveryDate: {
+    count: number;
+    sample: Array<{ eventKey: string; label: string; reason: string }>;
+  };
+  /** Every unsold seat was released: a seat that comes back goes to single sale, not the block. */
+  windowEnded: boolean;
+  scheduledRelease: { at: string; jobId: string } | null;
+  dates: Array<{
+    eventKey: string;
+    state: 'up_to_date' | 'catching_up' | 'failed' | (string & {});
+    behind: number;
+    lastAppliedAt: string | null;
+  }>;
+  [key: string]: unknown;
+}
+
+/**
+ * A season-seats season's date still leaving a shard before a cancel (`createSeasonAmendment`)
+ * or a past date (`markSeasonPerformancePast`) runs: `202`. It finishes by itself; send the same
+ * request again after `Retry-After` to read how it ended. The methods keep their result types, so
+ * check with `isSeasonDateLeavePending` first.
+ */
+export interface SeasonDateLeavePending {
+  state: 'finishing';
+  code: 'block_date_leave_pending';
+  retryable: true;
+  eventKey: string;
+  shardsLeft: number[];
+  shardCount: number;
+  message: string;
+  [key: string]: unknown;
+}
+
+/** True for the `202` a season-seats season's date cancel or past date answers while it finishes. */
+export function isSeasonDateLeavePending(value: unknown): value is SeasonDateLeavePending {
+  return !!value && typeof value === 'object'
+    && (value as { state?: unknown }).state === 'finishing'
+    && (value as { code?: unknown }).code === 'block_date_leave_pending';
+}
+
+/** The 202 of `setAsideSeasonBlock` and `releaseSeasonBlock`: the job to follow, and the block now. */
+export interface SeasonBlockJobAnswer {
+  job: SeasonBulkJob;
+  block: SeasonBlock;
+}
 
 /**
  * The job voiding a cancelled date's tickets: `sbj_void_` and the cancel's `amendmentId`.
@@ -695,6 +805,13 @@ export interface UpdateSeasonParams {
   audience?: 'embed_only' | 'public';
   /** Turned on while on sale, each upcoming date's own sales open through its readiness checks; off, they stop. */
   singleTickets?: boolean;
+  /**
+   * `block` turns season seats on for this season; `per_hold` turns them off again, refused with
+   * `409 season_block_exists` once seats are set aside. It does not change `revision`. Refused with
+   * `409 season_block_packages` (more than one package), `409 season_block_on_sale` (sales already
+   * opened without season seats), `409 season_not_draft_or_active`, or `422 invalid_inventory_mode`.
+   */
+  inventoryMode?: SeasonInventoryMode;
 }
 
 export interface SeasonStoppedOrder {
@@ -1063,6 +1180,8 @@ export class Seasons {
    * Open sales. `warnings` says what is advised but not required, such as
    * `checkout_test_missing` until a checkout test or rehearsal has passed. With
    * `singleTickets` on, `singleTicketDates` says which dates opened their own sales.
+   * With season seats turned on (`inventoryMode: 'block'`) but the seats not yet set aside:
+   * `409 block_not_ready`.
    */
   openSeasonSales(seasonKey: string, expectedRevision: number): Promise<SeasonSalesOpenResult> {
     return this.#sales(seasonKey, 'open', expectedRevision) as Promise<SeasonSalesOpenResult>;
@@ -1245,6 +1364,10 @@ export class Seasons {
    * the date as a `date_cancel_void` job, `seasonDateCancelVoidJobId(amendment.amendmentId)`;
    * with a `refund`, `refundJob` names the refund job. A cancelled date can't be moved
    * (`reschedule`), postponed or replaced: `409 performance_cancelled`.
+   *
+   * On a season-seats season, a `cancel` first takes the date off every season seat: while that
+   * finishes the answer is a `202` `SeasonDateLeavePending` (check with `isSeasonDateLeavePending`);
+   * send the same request again to read the amendment.
    */
   createSeasonAmendment(
     seasonKey: string,
@@ -1479,6 +1602,9 @@ export class Seasons {
   /**
    * Mark a performance past so it stops blocking new Season sales.
    * Retried safely with one Idempotency-Key. A cancelled date answers `409 performance_cancelled`.
+   *
+   * On a season-seats season the date first leaves every season seat: while that finishes the
+   * answer is a `202` `SeasonDateLeavePending` (check with `isSeasonDateLeavePending`).
    */
   markSeasonPerformancePast(
     seasonKey: string,
@@ -1735,6 +1861,45 @@ export class Seasons {
   /** Retrieve one bulk job with its counts and up to 500 failed items. */
   retrieveSeasonBulkJob(seasonKey: string, jobId: string): Promise<{ job: SeasonBulkJobDetail }> {
     return this.#http.get(`/v1/seasons/${pathPart(seasonKey)}/jobs/${pathPart(jobId)}`);
+  }
+
+  /**
+   * Set the season's seats aside on every date: every seat its packages price, minus
+   * `keepForSingleTickets`. Answers a `season_block_set_aside` job to follow with
+   * `retrieveSeasonBulkJob`. On an active season block mode turns on by itself once every
+   * date has the seats (`season.block.ready`); on a draft, Publish turns it on. Season seats
+   * must be on for the season (`409 season_block_not_enabled` otherwise). Retried safely
+   * with one Idempotency-Key, which replays the same answer.
+   */
+  setAsideSeasonBlock(
+    seasonKey: string,
+    params: SetAsideSeasonBlockParams,
+    options: { idempotencyKey?: string; signal?: AbortSignal } = {},
+  ): Promise<SeasonBlockJobAnswer> {
+    return this.#http.postWithHeaderReplay(`/v1/seasons/${pathPart(seasonKey)}/block`, {
+      body: params, idempotencyKey: options.idempotencyKey, signal: options.signal,
+    });
+  }
+
+  /** Retrieve the season's seats: counts, seats not free on every date, each date's catch-up. */
+  retrieveSeasonBlock(seasonKey: string): Promise<{ block: SeasonBlock }> {
+    return this.#http.get(`/v1/seasons/${pathPart(seasonKey)}/block`);
+  }
+
+  /**
+   * Release unsold season seats to single sale, now or `at` a set time, on every date or on
+   * `eventKeys`. Held seats go when their hold ends; booked seats are never released. Answers a
+   * `season_block_release` job; `season.block.released` follows once it has run. Retried safely
+   * with one Idempotency-Key: the release runs once.
+   */
+  releaseSeasonBlock(
+    seasonKey: string,
+    params: ReleaseSeasonBlockParams,
+    options: { idempotencyKey?: string; signal?: AbortSignal } = {},
+  ): Promise<SeasonBlockJobAnswer> {
+    return this.#http.postWithHeaderReplay(`/v1/seasons/${pathPart(seasonKey)}/block/release`, {
+      body: params, idempotencyKey: options.idempotencyKey, signal: options.signal,
+    });
   }
 
   async waitForSeasonRenewal(

@@ -5,6 +5,7 @@ import {
   SeatLayerRateLimitError,
   SeatLayerValidationError,
   seasonDateCancelVoidJobId,
+  isSeasonDateLeavePending,
   seasonHolderImportRowsPerCall,
   type SeasonAmendment,
   type SeasonBulkJobDetail,
@@ -14,12 +15,17 @@ import {
   type SeasonPriceTypeKey,
   type SeasonRenewalCheckoutStarted,
   type SeasonBulkJob,
+  type SeasonBulkJobKind,
   type SeasonRenewalOffer,
   type SeasonRenewalOfferJob,
   type SeasonRenewalQuote,
   type SeasonResult,
   type SeasonSingleTicketDates,
   type SeasonValidation,
+  type Season,
+  type SeasonInventoryMode,
+  type CreateSeasonParams,
+  type UpdateSeasonParams,
 } from '../src/index.js';
 
 type StubResponse = {
@@ -734,6 +740,102 @@ describe('Season organizer resource', () => {
     ]);
   });
 
+  it('maps season seats: set aside, read and release, each a job read with retrieveSeasonBulkJob', async () => {
+    const block = {
+      mode: 'per_hold', state: 'setting_aside', revision: 7,
+      counts: { setAside: 1840, free: 1840, held: 0, booked: 0, released: 0 },
+      notFreeOnEveryDate: { count: 1, sample: [{ eventKey: 'ev_3', label: 'C-14', reason: 'sold' }] },
+      windowEnded: false, scheduledRelease: null,
+      dates: [{ eventKey: 'ev_1', state: 'up_to_date', behind: 0, lastAppliedAt: '2026-11-20T10:00:01Z' }],
+    };
+    const setAsideJob = {
+      jobId: 'sbsa_sbp_spl_1', kind: 'season_block_set_aside', state: 'running',
+      counts: { total: 25, done: 4, skipped: 0, failed: 0 }, createdAt: 1, updatedAt: 2, completedAt: null,
+    };
+    const releaseJob = { ...setAsideJob, jobId: 'sbr_1', kind: 'season_block_release', state: 'planning' };
+    await expectOperations([
+      {
+        name: 'setAsideSeasonBlock',
+        run: (sdk) => sdk.seasons.setAsideSeasonBlock('sea_a/b', {
+          expectedRevision: 7, keepForSingleTickets: { sectionIds: ['sec_family'] },
+        }, { idempotencyKey: 'set-aside-1' }),
+        method: 'POST', path: '/v1/seasons/sea_a%2Fb/block',
+        body: { expectedRevision: 7, keepForSingleTickets: { sectionIds: ['sec_family'] } }, idempotencyKey: 'set-aside-1',
+        response: { status: 202, body: { job: setAsideJob, block } }, returns: { job: setAsideJob, block },
+      },
+      {
+        name: 'setAsideSeasonBlock without a key',
+        run: (sdk) => sdk.seasons.setAsideSeasonBlock('sea_1', { expectedRevision: 7 }),
+        method: 'POST', path: '/v1/seasons/sea_1/block',
+        body: { expectedRevision: 7 }, idempotencyKey: 'generated', response: { status: 202, body: { job: setAsideJob, block } },
+      },
+      {
+        name: 'retrieveSeasonBlock',
+        run: (sdk) => sdk.seasons.retrieveSeasonBlock('sea_a/b'),
+        method: 'GET', path: '/v1/seasons/sea_a%2Fb/block',
+        response: { status: 200, body: { block } }, returns: { block },
+      },
+      {
+        name: 'releaseSeasonBlock',
+        run: (sdk) => sdk.seasons.releaseSeasonBlock('sea_a/b', {
+          expectedRevision: 7, scope: { all: true }, eventKeys: ['ev_1'], at: '2026-12-01T09:00:00Z', reason: 'End of the season window',
+        }, { idempotencyKey: 'release-1' }),
+        method: 'POST', path: '/v1/seasons/sea_a%2Fb/block/release',
+        body: { expectedRevision: 7, scope: { all: true }, eventKeys: ['ev_1'], at: '2026-12-01T09:00:00Z', reason: 'End of the season window' },
+        idempotencyKey: 'release-1',
+        response: { status: 202, body: { job: releaseJob, block } }, returns: { job: releaseJob, block },
+      },
+      {
+        name: 'retrieveSeasonBulkJob reads a season seats job',
+        run: (sdk) => sdk.seasons.retrieveSeasonBulkJob('sea_a/b', 'sbr_1'),
+        method: 'GET', path: '/v1/seasons/sea_a%2Fb/jobs/sbr_1',
+        response: { status: 200, body: { job: { ...releaseJob, summary: { scope: { all: true } }, failedItems: [] } } },
+        returns: { job: { ...releaseJob, summary: { scope: { all: true } }, failedItems: [] } },
+      },
+    ]);
+    expectTypeOf<SeasonBulkJobKind>().toEqualTypeOf<
+      | 'date_added' | 'date_removed' | 'renewal_run' | 'lapsed_release' | 'bulk_refund' | 'holder_import'
+      | 'series_dates' | 'series_update' | 'season_singles' | 'date_cancel_void'
+      | 'season_block_set_aside' | 'season_block_release'
+    >();
+  });
+
+  it('season seats refusals come through the typed error with their code; a job of a kind not known yet still parses', async () => {
+    const refusals = [
+      { status: 409, body: { error: 'season_block_not_enabled', code: 'season_block_not_enabled', message: 'Season seats aren’t turned on for this season.' } },
+      { status: 409, body: { error: 'block_exists', code: 'block_exists' } },
+      { status: 422, body: { error: 'block_selection_empty', code: 'block_selection_empty' } },
+      { status: 409, body: { error: 'season_block_set_aside', code: 'season_block_set_aside' } },
+      { status: 409, body: { error: 'season_inventory_locked', code: 'season_inventory_locked', action: 'date_changes' } },
+    ];
+    const stub = stubFetch([...refusals, { status: 200, body: { job: { jobId: 'sbx_1', kind: 'some_future_kind', state: 'running', counts: { total: 1, done: 0, skipped: 0, failed: 0 }, createdAt: 1, updatedAt: 1, completedAt: null } } }]);
+    const sdk = new SeatLayer({ secretKey: 'sk_test_abc', fetch: stub.fetch });
+    for (const refusal of refusals) {
+      const error = await sdk.seasons.setAsideSeasonBlock('sea_1', { expectedRevision: 1 }).catch((thrown: unknown) => thrown);
+      expect(error).toBeInstanceOf(SeatLayerError);
+      expect((error as SeatLayerError).status).toBe(refusal.status);
+      expect((error as SeatLayerError).code).toBe(refusal.body.code);
+    }
+    await expect(sdk.seasons.retrieveSeasonBulkJob('sea_1', 'sbx_1')).resolves.toMatchObject({ job: { kind: 'some_future_kind' } });
+  });
+
+  it('a season-seats date cancel or past date still finishing answers a 202 the guard recognises', async () => {
+    const pending = {
+      state: 'finishing', code: 'block_date_leave_pending', retryable: true, eventKey: 'ev_2',
+      shardsLeft: [0, 1], shardCount: 3, message: 'The date is being taken off sale for every season seat.',
+    };
+    const stub = stubFetch([{ status: 202, body: pending, headers: { 'retry-after': '2' } }, { status: 202, body: pending }]);
+    const sdk = new SeatLayer({ secretKey: 'sk_test_abc', fetch: stub.fetch });
+    const cancel = await sdk.seasons.createSeasonAmendment('sea_1', { eventKey: 'ev_2', kind: 'cancel' } as never);
+    expect(isSeasonDateLeavePending(cancel)).toBe(true);
+    const past = await sdk.seasons.markSeasonPerformancePast('sea_1', 'ev_2', {});
+    expect(isSeasonDateLeavePending(past)).toBe(true);
+    expect(isSeasonDateLeavePending({ amendment: { amendmentId: 'sam_1' } })).toBe(false);
+    expect(isSeasonDateLeavePending({ state: 'finishing', code: 'season_busy' })).toBe(false);
+    expect(isSeasonDateLeavePending({ state: 'done', code: 'block_date_leave_pending' })).toBe(false);
+    expect(isSeasonDateLeavePending(null)).toBe(false);
+  });
+
   it('maps renewal at scale: the lapsed release job, the paged offer lists, and the 202 job answers', async () => {
     const job = {
       jobId: 'sbj_1', kind: 'lapsed_release', state: 'planning',
@@ -852,6 +954,94 @@ describe('Season organizer resource', () => {
     expectTypeOf<SeasonResult['singleTicketDates']>().toEqualTypeOf<SeasonSingleTicketDates | undefined>();
     expectTypeOf<SeasonResult['season']['singleTickets']>().toEqualTypeOf<boolean>();
     expectTypeOf<'season_singles'>().toMatchTypeOf<SeasonBulkJob['kind']>();
+  });
+
+  it('sends inventoryMode on create and update only when given, and reads it back on every season', async () => {
+    const blockSeason = { key: 'sea_1', inventoryMode: 'block', revision: 5, plans: [] };
+    const updated = { season: { ...blockSeason, inventoryMode: 'per_hold' } };
+    await expectOperations([
+      {
+        name: 'createSeason with season seats on',
+        run: (sdk) => sdk.seasons.createSeason({
+          name: 'Series', eventKeys: ['ev_1', 'ev_2'], inventoryMode: 'block',
+        }, { idempotencyKey: 'create-block' }),
+        method: 'POST', path: '/v1/seasons',
+        body: { name: 'Series', eventKeys: ['ev_1', 'ev_2'], inventoryMode: 'block' }, idempotencyKey: 'create-block',
+        response: { status: 201, body: { season: blockSeason } }, returns: { season: blockSeason },
+      },
+      {
+        name: 'createSeason leaving inventoryMode out sends none',
+        run: (sdk) => sdk.seasons.createSeason({ name: 'Series', eventKeys: ['ev_1', 'ev_2'] }, { idempotencyKey: 'create-default' }),
+        method: 'POST', path: '/v1/seasons',
+        body: { name: 'Series', eventKeys: ['ev_1', 'ev_2'] }, idempotencyKey: 'create-default',
+        response: { status: 201, body: { season: { key: 'sea_2', inventoryMode: 'per_hold', plans: [] } } },
+      },
+      {
+        name: 'updateSeason turning season seats on',
+        run: (sdk) => sdk.seasons.updateSeason('sea_1', { expectedRevision: 5, inventoryMode: 'block' }, {
+          idempotencyKey: 'block-on',
+        }),
+        method: 'PATCH', path: '/v1/seasons/sea_1', body: { expectedRevision: 5, inventoryMode: 'block' },
+        idempotencyKey: 'block-on', response: { status: 200, body: { season: blockSeason } }, returns: { season: blockSeason },
+      },
+      {
+        name: 'updateSeason turning season seats off',
+        run: (sdk) => sdk.seasons.updateSeason('sea_1', { expectedRevision: 5, inventoryMode: 'per_hold' }, {
+          idempotencyKey: 'block-off',
+        }),
+        method: 'PATCH', path: '/v1/seasons/sea_1', body: { expectedRevision: 5, inventoryMode: 'per_hold' },
+        idempotencyKey: 'block-off', response: { status: 200, body: updated }, returns: updated,
+      },
+      {
+        name: 'updateSeason leaving inventoryMode out sends none',
+        run: (sdk) => sdk.seasons.updateSeason('sea_1', { expectedRevision: 5, name: 'Renamed' }, { idempotencyKey: 'rename' }),
+        method: 'PATCH', path: '/v1/seasons/sea_1', body: { expectedRevision: 5, name: 'Renamed' }, idempotencyKey: 'rename',
+        response: { status: 200, body: updated },
+      },
+      {
+        name: 'retrieveSeason reads inventoryMode back',
+        run: (sdk) => sdk.seasons.retrieveSeason('sea_1'),
+        method: 'GET', path: '/v1/seasons/sea_1',
+        response: { status: 200, body: { season: blockSeason } }, returns: { season: blockSeason },
+      },
+      {
+        name: 'listSeasons reads inventoryMode on each item',
+        run: (sdk) => sdk.seasons.listSeasons(),
+        method: 'GET', path: '/v1/seasons',
+        response: { status: 200, body: { seasons: [blockSeason, updated.season], nextCursor: null } },
+        returns: { seasons: [blockSeason, updated.season], nextCursor: null },
+      },
+    ]);
+    expectTypeOf<SeasonInventoryMode>().toEqualTypeOf<'block' | 'per_hold'>();
+    expectTypeOf<SeasonResult['season']['inventoryMode']>().toEqualTypeOf<SeasonInventoryMode>();
+    expectTypeOf<Season['inventoryMode']>().toEqualTypeOf<SeasonInventoryMode>();
+    expectTypeOf<CreateSeasonParams['inventoryMode']>().toEqualTypeOf<SeasonInventoryMode | undefined>();
+    expectTypeOf<UpdateSeasonParams['inventoryMode']>().toEqualTypeOf<SeasonInventoryMode | undefined>();
+  });
+
+  it('inventoryMode refusals, and opening sales before the seats are set aside, come through the typed error with their code', async () => {
+    const refusals = [
+      { status: 409, body: { error: 'season_block_packages', code: 'season_block_packages' } },
+      { status: 409, body: { error: 'season_block_on_sale', code: 'season_block_on_sale' } },
+      { status: 409, body: { error: 'season_not_draft_or_active', code: 'season_not_draft_or_active' } },
+      { status: 409, body: { error: 'season_block_exists', code: 'season_block_exists' } },
+      { status: 422, body: { error: 'invalid_inventory_mode', code: 'invalid_inventory_mode' } },
+    ];
+    const notReady = { status: 409, body: { error: 'block_not_ready', code: 'block_not_ready' } };
+    const stub = stubFetch([...refusals, notReady]);
+    const sdk = new SeatLayer({ secretKey: 'sk_test_abc', fetch: stub.fetch });
+    for (const refusal of refusals) {
+      const error = await sdk.seasons.updateSeason('sea_1', { expectedRevision: 5, inventoryMode: 'block' })
+        .catch((thrown: unknown) => thrown);
+      expect(error).toBeInstanceOf(SeatLayerError);
+      expect((error as SeatLayerError).status).toBe(refusal.status);
+      expect((error as SeatLayerError).code).toBe(refusal.body.code);
+    }
+    const error = await sdk.seasons.openSeasonSales('sea_1', 5).catch((thrown: unknown) => thrown);
+    expect(error).toBeInstanceOf(SeatLayerError);
+    expect((error as SeatLayerError).status).toBe(409);
+    expect((error as SeatLayerError).code).toBe('block_not_ready');
+    expect(stub.responses).toHaveLength(0);
   });
 
   it('retries the release of lapsed offers with one key', async () => {
@@ -1075,7 +1265,7 @@ describe('Season organizer resource', () => {
     expect((error as SeatLayerValidationError).body.maxRows).toBe(43);
   });
 
-  it('exposes exactly 87 season operations, plus the polling helpers and the import alias', () => {
+  it('exposes exactly 90 season operations (87 + the 3 season seats calls), plus the polling helpers and the import alias', () => {
     const sdk = new SeatLayer({ secretKey: 'sk_test_abc', fetch: stubFetch([]).fetch });
     const methods = Object.getOwnPropertyNames(Object.getPrototypeOf(sdk.seasons))
       .filter((name) => name !== 'constructor');
@@ -1083,7 +1273,7 @@ describe('Season organizer resource', () => {
     expect(helpers.sort()).toEqual([
       'importSeasonHolders', 'waitForSeasonBooking', 'waitForSeasonLifecycle', 'waitForSeasonRenewal',
     ]);
-    expect(methods.length - helpers.length).toBe(87);
+    expect(methods.length - helpers.length).toBe(90);
   });
 
   it('types CSV exports as text and the 204 plan delete as void', () => {
