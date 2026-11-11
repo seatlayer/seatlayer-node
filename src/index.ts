@@ -7,8 +7,11 @@
 import { HttpClient, type ClientOptions } from './http.js';
 import { Charts } from './resources/charts.js';
 import { Channels } from './resources/channels.js';
+import { EventSeriesResource } from './resources/event-series.js';
 import { Events } from './resources/events.js';
+import { Holders } from './resources/holders.js';
 import { Inventory } from './resources/inventory.js';
+import { Orders } from './resources/orders.js';
 import { PerformanceGroups } from './resources/performance-groups.js';
 import { Sessions } from './resources/sessions.js';
 import { Seasons } from './resources/seasons.js';
@@ -21,7 +24,10 @@ export class SeatLayer {
   readonly charts: Charts;
   readonly channels: Channels;
   readonly events: Events;
+  readonly eventSeries: EventSeriesResource;
+  readonly holders: Holders;
   readonly inventory: Inventory;
+  readonly orders: Orders;
   readonly performanceGroups: PerformanceGroups;
   readonly sessions: Sessions;
   readonly seasons: Seasons;
@@ -42,7 +48,10 @@ export class SeatLayer {
     this.charts = new Charts(this.#http);
     this.channels = new Channels(this.#http);
     this.events = new Events(this.#http);
+    this.eventSeries = new EventSeriesResource(this.#http);
+    this.holders = new Holders(this.#http);
     this.inventory = new Inventory(this.#http);
+    this.orders = new Orders(this.#http);
     this.performanceGroups = new PerformanceGroups(this.#http);
     this.sessions = new Sessions(this.#http);
     this.seasons = new Seasons(this.#http);
@@ -96,7 +105,11 @@ export {
   SeasonLifecycleTimeoutError,
   SeasonBookingTimeoutError,
   type CreateSeasonParams,
+  type CreateSeasonPerformancesParams,
   type CreateSeasonPlanParams,
+  type CreateSeasonAmendmentParams,
+  type RefundSeasonPerformanceParams,
+  type UpdateSeasonParams,
   type Season,
   type SeasonCompatibilityIssue,
   type SeasonBuyerAccessReveal,
@@ -114,6 +127,45 @@ export {
   type SeasonHoldItem,
   type SeasonHolderImport,
   type SeasonHolderImportRow,
+  type SeasonCheckoutTest,
+  type SeasonDateJob,
+  type SeasonBulkJob,
+  type SeasonBulkJobCounts,
+  type SeasonBulkJobDetail,
+  type SeasonBulkJobKind,
+  type SeasonBulkJobState,
+  type SeasonRefundJobSummary,
+  type SeasonHolder,
+  type SeasonHolderFilter,
+  type SeasonHolderImportFromSeason,
+  type SeasonHolderListOptions,
+  type SeasonHolderPage,
+  type SeasonHostedRenewals,
+  type SeasonOccurrenceInventoryAction,
+  type SeasonOccurrenceInventorySource,
+  type SeasonOrderCancelReceipt,
+  type SeasonOrderDateCancel,
+  type SeasonOrderRefund,
+  type SeasonPackagePrice,
+  type SeasonPackagePriceInput,
+  type SeasonPriceTypeKey,
+  type SeasonPackagePrices,
+  type SeasonPackageResult,
+  type SeasonPackageSummary,
+  type SeasonPerformance,
+  type SeasonPerformanceCreateResult,
+  type SeasonPerformanceList,
+  type SeasonPlanPerformanceAttachResult,
+  type SeasonPlanPerformanceRemoveResult,
+  type SeasonPriceList,
+  type SeasonPublishResult,
+  type SeasonSalesOpenResult,
+  type SeasonResult,
+  type SeasonSingleTicketDates,
+  type SeasonSalesReport,
+  type SeasonSeatCounts,
+  type SeasonSeatsReport,
+  type SeasonStoppedOrder,
   type SeasonPlanPublicationResult,
   type SeasonPublicationState,
   type SeasonSalesState,
@@ -121,18 +173,27 @@ export {
   type SeasonSourcePerformanceGroup,
   type SeasonStructureState,
   type SeasonRenewalOffer,
+  type SeasonRenewalOfferJob,
+  type SeasonRenewalOfferPageOptions,
   type SeasonOccurrence,
   type SeasonAmendment,
+  type SeasonAmendmentKind,
+  type SeasonAmendmentRequestKind,
   type SeasonReport,
   type SeasonOperationSummary,
   type SeasonSupportLookup,
   type SeasonOutboxOccurrence,
   type SeasonAuditEntry,
   type SeasonRenewalResult,
+  type SeasonRenewalQuote,
+  type SeasonRenewalQuoteProblem,
+  type SeasonRenewalCheckoutParams,
+  type SeasonRenewalCheckoutStarted,
+  type DeclineSeasonRenewalOfferParams,
   type SeasonValidation,
   type WaitForSeasonLifecycleOptions,
 } from './resources/seasons.js';
-export { SeasonRenewalTimeoutError } from './resources/seasons.js';
+export { SeasonRenewalTimeoutError, seasonDateCancelVoidJobId, seasonHolderImportRowsPerCall } from './resources/seasons.js';
 export type {
   AccessLink,
   AccessLinkReveal,
@@ -161,12 +222,80 @@ export type {
 } from './resources/channels.js';
 export { PUBLIC_CHANNEL_ID } from './resources/channels.js';
 export type {
+  CreateEventDiscountCodeParams,
+  EventBookingFee,
+  EventBuyerCheckout,
+  EventBuyerCheckoutOption,
+  EventBuyerCheckoutReplaceResult,
+  EventBuyerCheckoutState,
   EventChartUpdateResult,
+  EventDiscountCode,
   EventListOptions,
   EventPage,
+  EventPaymentGatewayAssignment,
+  EventPaymentGatewayOptions,
+  EventSalesPreflightResult,
+  EventSalesReadiness,
+  EventSalesState,
+  EventSalesTransitionResult,
   EventUpdateParams,
   PosterImage,
+  UpdateEventDiscountCodeParams,
 } from './resources/events.js';
+export type {
+  AddEventSeriesDatesParams,
+  CreateEventSeriesParams,
+  CreateEventSeriesFromPlanParams,
+  CreateEventSeriesFromEventParams,
+  EventSeries,
+  EventSeriesCreated,
+  EventSeriesDatesAdded,
+  EventSeriesDetail,
+  EventSeriesJobSummary,
+  EventSeriesListOptions,
+  EventSeriesPage,
+  EventSeriesSchedule,
+  EventSeriesUpdated,
+  UpdateEventSeriesParams,
+} from './resources/event-series.js';
+export type {
+  CreateHolderReturnParams,
+  CreateHolderTransferParams,
+  Customer,
+  CustomerListOptions,
+  CustomerPage,
+  Holder,
+  HolderReturn,
+  HolderReturnTicket,
+  HolderSeason,
+  HolderTicket,
+  HolderTicketDetail,
+  HolderTicketListOptions,
+  HolderTicketPage,
+  TicketTransfer,
+  UpdateHolderParams,
+} from './resources/holders.js';
+export type {
+  CancelOrderParams,
+  EventOrderCancelResult,
+  EventOrderDetail,
+  EventOrderExportOptions,
+  EventOrderListOptions,
+  EventOrderPage,
+  EventOrderRefundResult,
+  EventOrderResendResult,
+  EventOrderStatus,
+  EventOrderSummary,
+  Order,
+  OrderDetail,
+  OrderLine,
+  OrderListOptions,
+  OrderPage,
+  OrderStatus,
+  OrderTicket,
+  RefundOrderParams,
+  ResendOrderTicketsParams,
+} from './resources/orders.js';
 export type { InstantiateTemplateOptions, InstantiateTemplateParams } from './resources/templates.js';
 export type * from './types.js';
 

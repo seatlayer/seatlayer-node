@@ -1,27 +1,93 @@
 import { describe, expect, expectTypeOf, it, vi } from 'vitest';
 import {
   SeatLayer,
+  SeatLayerError,
   SeatLayerRateLimitError,
+  SeatLayerValidationError,
+  seasonDateCancelVoidJobId,
+  seasonHolderImportRowsPerCall,
+  type SeasonAmendment,
+  type SeasonBulkJobDetail,
   type SeasonHold,
+  type SeasonPackagePrice,
+  type SeasonPriceList,
+  type SeasonPriceTypeKey,
+  type SeasonRenewalCheckoutStarted,
+  type SeasonBulkJob,
+  type SeasonRenewalOffer,
+  type SeasonRenewalOfferJob,
+  type SeasonRenewalQuote,
+  type SeasonResult,
+  type SeasonSingleTicketDates,
   type SeasonValidation,
 } from '../src/index.js';
 
-function stubFetch(responses: Array<{
+type StubResponse = {
   status: number;
   body?: unknown;
+  /** Sent as-is instead of JSON, for CSV downloads. */
+  rawBody?: string;
   headers?: Record<string, string>;
-}>) {
+};
+
+function stubFetch(responses: StubResponse[]) {
   const calls: Array<{ url: string; init: RequestInit }> = [];
   const fetch = vi.fn(async (url: Parameters<typeof globalThis.fetch>[0], init?: RequestInit) => {
     calls.push({ url: String(url), init: init ?? {} });
     const next = responses.shift();
     if (!next) throw new Error('stubFetch: more requests than queued responses');
-    return new Response(next.body === undefined ? null : JSON.stringify(next.body), {
+    return new Response(next.rawBody ?? (next.body === undefined ? null : JSON.stringify(next.body)), {
       status: next.status,
       headers: { 'content-type': 'application/json', ...(next.headers ?? {}) },
     });
   });
   return { fetch: fetch as unknown as typeof globalThis.fetch, calls, responses };
+}
+
+const GENERATED_KEY = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
+
+/** One operation in a table: the call, the request it must send, and what it returns. */
+interface OperationCase {
+  name: string;
+  run: (sdk: SeatLayer) => Promise<unknown>;
+  method: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE';
+  /** Path plus query string, exactly as sent. */
+  path: string;
+  /** Parsed JSON body; leave out when no body may be sent. */
+  body?: unknown;
+  /** A caller key, 'generated' for a header-replay call without one, or absent for no header. */
+  idempotencyKey?: string;
+  response?: StubResponse;
+  /** When present, the resolved value must equal this. */
+  returns?: unknown;
+}
+
+/** Runs every case against one queued stub, then checks each request and that the queue drained. */
+async function expectOperations(cases: OperationCase[]) {
+  const stub = stubFetch(cases.map((entry) => entry.response ?? { status: 200, body: { ok: true } }));
+  const sdk = new SeatLayer({ secretKey: 'sk_test_abc', fetch: stub.fetch, maxRetries: 3 });
+  const results: unknown[] = [];
+  for (const entry of cases) results.push(await entry.run(sdk));
+
+  expect(stub.calls).toHaveLength(cases.length);
+  cases.forEach((entry, index) => {
+    const call = stub.calls[index]!;
+    const url = new URL(call.url);
+    const headers = call.init.headers as Record<string, string>;
+    expect(`${entry.name}: ${call.init.method} ${url.pathname}${url.search}`)
+      .toBe(`${entry.name}: ${entry.method} ${entry.path}`);
+    const sent = call.init.body === undefined ? undefined : JSON.parse(call.init.body as string);
+    expect(sent, `${entry.name} body`).toEqual(entry.body);
+    if (entry.idempotencyKey === undefined) {
+      expect(headers['Idempotency-Key'], `${entry.name} sends no Idempotency-Key`).toBeUndefined();
+    } else if (entry.idempotencyKey === 'generated') {
+      expect(headers['Idempotency-Key'], `${entry.name} generates a key`).toMatch(GENERATED_KEY);
+    } else {
+      expect(headers['Idempotency-Key'], `${entry.name} sends the caller key`).toBe(entry.idempotencyKey);
+    }
+    if ('returns' in entry) expect(results[index], `${entry.name} result`).toEqual(entry.returns);
+  });
+  expect(stub.responses).toHaveLength(0);
 }
 
 function lifecycle(terminal: boolean, kind: 'ACTIVATION' | 'CLOSE' | 'ARCHIVE' | 'PLAN_PUBLICATION' = 'ACTIVATION') {
@@ -403,6 +469,691 @@ describe('Season organizer resource', () => {
     for (const index of [0, 2, 3, 4, 5, 6, 7, 8, 9, 10]) {
       expect(headers[index]!['Idempotency-Key']).toBeUndefined();
     }
+    expect(stub.responses).toHaveLength(0);
+  });
+
+  it('maps the 32 season 2a operations: verb, escaped path, query, body, and replay class', async () => {
+    const csvHolders = 'holderRef,holderName\nholder_1,"Smith, A"\n';
+    const csvOrders = 'orderId,displayRef\nord_1,SL-1\n';
+    const source = { bookingActionId: 'sba_1' };
+    await expectOperations([
+      {
+        name: 'createSeasonHolderImportFromSeason',
+        run: (sdk) => sdk.seasons.createSeasonHolderImportFromSeason('sea_a/b', {
+          sourceSeasonId: 'sea_prev', successorPlanActivationId: 'spa_1', dryRun: true,
+        }, { idempotencyKey: 'from-season-1' }),
+        method: 'POST', path: '/v1/seasons/sea_a%2Fb/imports/from-season',
+        body: { sourceSeasonId: 'sea_prev', successorPlanActivationId: 'spa_1', dryRun: true },
+        idempotencyKey: 'from-season-1', response: { status: 201, body: { import: { holders: 2 } } },
+      },
+      {
+        name: 'listSeasonPerformances',
+        run: (sdk) => sdk.seasons.listSeasonPerformances('sea_a/b'),
+        method: 'GET', path: '/v1/seasons/sea_a%2Fb/performances',
+      },
+      {
+        name: 'createSeasonPerformances',
+        run: (sdk) => sdk.seasons.createSeasonPerformances('sea_a/b', {
+          titlePattern: 'Home game', timezone: 'Europe/London', repeat: 'weekly', count: 3,
+          firstStartsAt: 1_800_000_000_000, region: 'western-europe', attachToPlanKeys: ['spl/1'],
+        }),
+        method: 'POST', path: '/v1/seasons/sea_a%2Fb/performances',
+        body: {
+          titlePattern: 'Home game', timezone: 'Europe/London', repeat: 'weekly', count: 3,
+          firstStartsAt: 1_800_000_000_000, region: 'western-europe', attachToPlanKeys: ['spl/1'],
+        },
+        idempotencyKey: 'generated', response: { status: 201, body: { created: [] } },
+      },
+      {
+        name: 'attachSeasonPerformances',
+        run: (sdk) => sdk.seasons.attachSeasonPerformances('sea_a/b', {
+          eventKeys: ['ev a/b'], attachToPlanKeys: ['spl/1'],
+        }, { idempotencyKey: 'attach-1' }),
+        method: 'POST', path: '/v1/seasons/sea_a%2Fb/performances/attach',
+        body: { eventKeys: ['ev a/b'], attachToPlanKeys: ['spl/1'] }, idempotencyKey: 'attach-1',
+      },
+      {
+        name: 'deleteSeasonPerformance',
+        run: (sdk) => sdk.seasons.deleteSeasonPerformance('sea_a/b', 'ev a/b'),
+        method: 'DELETE', path: '/v1/seasons/sea_a%2Fb/performances/ev%20a%2Fb', idempotencyKey: 'generated',
+      },
+      {
+        name: 'updateSeasonPlan',
+        run: (sdk) => sdk.seasons.updateSeasonPlan('sea_a/b', 'spl/1', {
+          name: 'Gold', eventKeys: ['ev_1'],
+        }, { idempotencyKey: 'plan-update-1' }),
+        method: 'PATCH', path: '/v1/seasons/sea_a%2Fb/plans/spl%2F1',
+        body: { name: 'Gold', eventKeys: ['ev_1'] }, idempotencyKey: 'plan-update-1',
+      },
+      {
+        name: 'deleteSeasonPlan',
+        run: (sdk) => sdk.seasons.deleteSeasonPlan('sea_a/b', 'spl/1'),
+        method: 'DELETE', path: '/v1/seasons/sea_a%2Fb/plans/spl%2F1', idempotencyKey: 'generated',
+        response: { status: 204 }, returns: undefined,
+      },
+      {
+        name: 'publishSeason',
+        run: (sdk) => sdk.seasons.publishSeason('sea_a/b', { idempotencyKey: 'publish-1' }),
+        method: 'POST', path: '/v1/seasons/sea_a%2Fb/publish', idempotencyKey: 'publish-1',
+      },
+      {
+        name: 'createSeasonCheckoutTest',
+        run: (sdk) => sdk.seasons.createSeasonCheckoutTest('sea_a/b', { planKey: 'spl/1', quantity: 2 }),
+        method: 'POST', path: '/v1/seasons/sea_a%2Fb/checkout-tests',
+        body: { planKey: 'spl/1', quantity: 2 }, idempotencyKey: 'generated',
+      },
+      {
+        name: 'listSeasonCheckoutTests',
+        run: (sdk) => sdk.seasons.listSeasonCheckoutTests('sea_a/b'),
+        method: 'GET', path: '/v1/seasons/sea_a%2Fb/checkout-tests',
+      },
+      {
+        name: 'replaceSeasonPackagePrices',
+        run: (sdk) => sdk.seasons.replaceSeasonPackagePrices('sea_a/b', 'spl/1', {
+          prices: [{ categoryKey: 'A', unitPrice: 12_000 }], currency: 'GBP',
+        }, { idempotencyKey: 'prices-1' }),
+        method: 'PUT', path: '/v1/seasons/sea_a%2Fb/plans/spl%2F1/prices',
+        body: { prices: [{ categoryKey: 'A', unitPrice: 12_000 }], currency: 'GBP' }, idempotencyKey: 'prices-1',
+      },
+      {
+        name: 'listSeasonPrices',
+        run: (sdk) => sdk.seasons.listSeasonPrices('sea_a/b'),
+        method: 'GET', path: '/v1/seasons/sea_a%2Fb/prices',
+      },
+      {
+        name: 'attachSeasonPlanPerformance',
+        run: (sdk) => sdk.seasons.attachSeasonPlanPerformance('sea_a/b', 'spl/1', { eventKey: 'ev a/b' }),
+        method: 'POST', path: '/v1/seasons/sea_a%2Fb/plans/spl%2F1/performances',
+        body: { eventKey: 'ev a/b' }, idempotencyKey: 'generated',
+        response: { status: 202, body: { extended: 0, job: { jobId: 'sdj_1' } } },
+      },
+      {
+        name: 'deleteSeasonPlanPerformance',
+        run: (sdk) => sdk.seasons.deleteSeasonPlanPerformance('sea_a/b', 'spl/1', 'ev a/b'),
+        method: 'DELETE', path: '/v1/seasons/sea_a%2Fb/plans/spl%2F1/performances/ev%20a%2Fb',
+        idempotencyKey: 'generated',
+      },
+      {
+        name: 'markSeasonPerformancePast',
+        run: (sdk) => sdk.seasons.markSeasonPerformancePast('sea_a/b', 'ev a/b', { force: true }),
+        method: 'POST', path: '/v1/seasons/sea_a%2Fb/performances/ev%20a%2Fb/past',
+        body: { force: true }, idempotencyKey: 'generated',
+      },
+      {
+        name: 'returnSeasonOccurrenceInventory',
+        run: (sdk) => sdk.seasons.returnSeasonOccurrenceInventory('sea_a/b', 'ev a/b', {
+          actionId: 'sra_1', bookingRef: 'order_1', planActivationId: 'spa_1', labels: ['A-1'], source,
+        }),
+        method: 'POST', path: '/v1/seasons/sea_a%2Fb/occurrences/ev%20a%2Fb/returns',
+        body: { actionId: 'sra_1', bookingRef: 'order_1', planActivationId: 'spa_1', labels: ['A-1'], source },
+      },
+      {
+        name: 'reclaimSeasonOccurrenceInventory',
+        run: (sdk) => sdk.seasons.reclaimSeasonOccurrenceInventory('sea_a/b', 'ev a/b', {
+          actionId: 'src_1', returnActionId: 'sra_1', bookingRef: 'order_1', planActivationId: 'spa_1',
+          labels: ['A-1'], source: { renewalOfferId: 'sro_1' },
+        }),
+        method: 'POST', path: '/v1/seasons/sea_a%2Fb/occurrences/ev%20a%2Fb/reclaims',
+        body: {
+          actionId: 'src_1', returnActionId: 'sra_1', bookingRef: 'order_1', planActivationId: 'spa_1',
+          labels: ['A-1'], source: { renewalOfferId: 'sro_1' },
+        },
+      },
+      {
+        name: 'listSeasonHolders',
+        run: (sdk) => sdk.seasons.listSeasonHolders('sea_a/b', {
+          q: 'smith a/b', status: 'active', cursor: 'c/1', limit: 25,
+        }),
+        method: 'GET', path: '/v1/seasons/sea_a%2Fb/holders?q=smith+a%2Fb&status=active&cursor=c%2F1&limit=25',
+      },
+      {
+        name: 'refundSeasonOrder',
+        run: (sdk) => sdk.seasons.refundSeasonOrder('sea_a/b', 'ord_1/2', { amountMinor: 500 }, {
+          idempotencyKey: 'refund-1',
+        }),
+        method: 'POST', path: '/v1/seasons/sea_a%2Fb/orders/ord_1%2F2/refund',
+        body: { amountMinor: 500 }, idempotencyKey: 'refund-1',
+        response: { status: 202, body: { orderId: 'ord_1/2', state: 'pending' } },
+      },
+      {
+        name: 'cancelSeasonOrder',
+        run: (sdk) => sdk.seasons.cancelSeasonOrder('sea_a/b', 'ord_1/2', {
+          reason: 'refunded_elsewhere', note: 'paid back', refundConfirmed: true,
+        }),
+        method: 'POST', path: '/v1/seasons/sea_a%2Fb/orders/ord_1%2F2/cancel',
+        body: { reason: 'refunded_elsewhere', note: 'paid back', refundConfirmed: true },
+        idempotencyKey: 'generated',
+      },
+      {
+        name: 'cancelSeasonOrderDate',
+        run: (sdk) => sdk.seasons.cancelSeasonOrderDate('sea_a/b', 'ord_1/2', 'ev a/b', { actionId: 'sda_1' }),
+        method: 'POST', path: '/v1/seasons/sea_a%2Fb/orders/ord_1%2F2/dates/ev%20a%2Fb/cancel',
+        body: { actionId: 'sda_1' }, idempotencyKey: 'generated',
+      },
+      {
+        name: 'resendSeasonOrderTickets',
+        run: (sdk) => sdk.seasons.resendSeasonOrderTickets('sea_a/b', 'ord_1/2', { email: 'fan@example.com' }),
+        method: 'POST', path: '/v1/seasons/sea_a%2Fb/orders/ord_1%2F2/resend', body: { email: 'fan@example.com' },
+      },
+      {
+        name: 'retrieveSeasonHostedRenewals',
+        run: (sdk) => sdk.seasons.retrieveSeasonHostedRenewals('sea_a/b'),
+        method: 'GET', path: '/v1/seasons/sea_a%2Fb/renewal-hosted',
+      },
+      {
+        name: 'rotateSeasonRenewalOfferLink',
+        run: (sdk) => sdk.seasons.rotateSeasonRenewalOfferLink('sea_a/b', 'sro/1'),
+        method: 'POST', path: '/v1/seasons/sea_a%2Fb/renewal-offers/sro%2F1/link',
+        response: { status: 201, body: { url: 'https://renew.example/r/once' } },
+        returns: { url: 'https://renew.example/r/once' },
+      },
+      {
+        name: 'updateSeasonRenewalOfferContact',
+        run: (sdk) => sdk.seasons.updateSeasonRenewalOfferContact('sea_a/b', 'sro/1', {
+          email: 'fan@example.com', name: null,
+        }),
+        method: 'POST', path: '/v1/seasons/sea_a%2Fb/renewal-offers/sro%2F1/contact',
+        body: { email: 'fan@example.com', name: null },
+      },
+      {
+        name: 'createSeasonRenewalNotices',
+        run: (sdk) => sdk.seasons.createSeasonRenewalNotices('sea_a/b', { offerIds: ['sro/1'] }),
+        method: 'POST', path: '/v1/seasons/sea_a%2Fb/renewal-notices', body: { offerIds: ['sro/1'] },
+      },
+      {
+        name: 'resendSeasonRenewalOffer',
+        run: (sdk) => sdk.seasons.resendSeasonRenewalOffer('sea_a/b', 'sro/1'),
+        method: 'POST', path: '/v1/seasons/sea_a%2Fb/renewal-offers/sro%2F1/resend',
+        response: { status: 202, body: { ok: true } },
+      },
+      {
+        name: 'retrieveSeasonSalesReport',
+        run: (sdk) => sdk.seasons.retrieveSeasonSalesReport('sea_a/b'),
+        method: 'GET', path: '/v1/seasons/sea_a%2Fb/reports/sales',
+      },
+      {
+        name: 'retrieveSeasonSeatsReport',
+        run: (sdk) => sdk.seasons.retrieveSeasonSeatsReport('sea_a/b'),
+        method: 'GET', path: '/v1/seasons/sea_a%2Fb/reports/seats',
+      },
+      {
+        name: 'exportSeasonHoldersCsv',
+        run: (sdk) => sdk.seasons.exportSeasonHoldersCsv('sea_a/b', { q: 'a/b', status: 'renewal' }),
+        method: 'GET', path: '/v1/seasons/sea_a%2Fb/reports/holders.csv?q=a%2Fb&status=renewal',
+        response: { status: 200, rawBody: csvHolders, headers: { 'content-type': 'text/csv; charset=utf-8' } },
+        returns: csvHolders,
+      },
+      {
+        name: 'exportSeasonOrdersCsv',
+        run: (sdk) => sdk.seasons.exportSeasonOrdersCsv('sea_a/b'),
+        method: 'GET', path: '/v1/seasons/sea_a%2Fb/reports/orders.csv',
+        response: { status: 200, rawBody: csvOrders, headers: { 'content-type': 'text/csv; charset=utf-8' } },
+        returns: csvOrders,
+      },
+      {
+        name: 'retrieveSeasonSeatCounts',
+        run: (sdk) => sdk.seasons.retrieveSeasonSeatCounts('sea_a/b'),
+        method: 'GET', path: '/v1/seasons/sea_a%2Fb/seat-counts',
+      },
+    ]);
+  });
+
+  it('maps the bulk refund of a cancelled date and the job reads', async () => {
+    const job = {
+      jobId: 'sbj_1', kind: 'bulk_refund', state: 'planning',
+      counts: { total: 0, done: 0, skipped: 0, failed: 0 }, createdAt: 1, updatedAt: 1, completedAt: null,
+    };
+    await expectOperations([
+      {
+        name: 'refundSeasonPerformance',
+        run: (sdk) => sdk.seasons.refundSeasonPerformance('sea_a/b', 'ev a/b', {
+          amount: 'per_date', reason: 'Storm',
+        }, { idempotencyKey: 'refund-date-1' }),
+        method: 'POST', path: '/v1/seasons/sea_a%2Fb/performances/ev%20a%2Fb/refunds',
+        body: { amount: 'per_date', reason: 'Storm' }, idempotencyKey: 'refund-date-1',
+        response: { status: 202, body: { job } }, returns: { job },
+      },
+      {
+        name: 'refundSeasonPerformance without a key',
+        run: (sdk) => sdk.seasons.refundSeasonPerformance('sea_1', 'ev_1', { amount: 'per_date' }),
+        method: 'POST', path: '/v1/seasons/sea_1/performances/ev_1/refunds',
+        body: { amount: 'per_date' }, idempotencyKey: 'generated', response: { status: 202, body: { job } },
+      },
+      {
+        name: 'listSeasonBulkJobs',
+        run: (sdk) => sdk.seasons.listSeasonBulkJobs('sea_a/b'),
+        method: 'GET', path: '/v1/seasons/sea_a%2Fb/jobs',
+        response: { status: 200, body: { jobs: [job] } }, returns: { jobs: [job] },
+      },
+      {
+        name: 'retrieveSeasonBulkJob',
+        run: (sdk) => sdk.seasons.retrieveSeasonBulkJob('sea_a/b', 'sbj/1'),
+        method: 'GET', path: '/v1/seasons/sea_a%2Fb/jobs/sbj%2F1',
+        response: { status: 200, body: { job: { ...job, failedItems: [] } } },
+      },
+    ]);
+  });
+
+  it('maps renewal at scale: the lapsed release job, the paged offer lists, and the 202 job answers', async () => {
+    const job = {
+      jobId: 'sbj_1', kind: 'lapsed_release', state: 'planning',
+      counts: { total: 0, done: 0, skipped: 0, failed: 0 }, createdAt: 1, updatedAt: 1, completedAt: null,
+    };
+    const run = { job: { ...job, kind: 'renewal_run' }, batchId: 'srb_1' };
+    const bringAcross = { job: { ...job, kind: 'holder_import' } };
+    await expectOperations([
+      {
+        name: 'releaseSeasonLapsedOffers',
+        run: (sdk) => sdk.seasons.releaseSeasonLapsedOffers('sea_a/b', { idempotencyKey: 'release-1' }),
+        method: 'POST', path: '/v1/seasons/sea_a%2Fb/renewal-offers/release-lapsed', idempotencyKey: 'release-1',
+        response: { status: 202, body: { job } }, returns: { job },
+      },
+      {
+        name: 'releaseSeasonLapsedOffers without a key',
+        run: (sdk) => sdk.seasons.releaseSeasonLapsedOffers('sea_1'),
+        method: 'POST', path: '/v1/seasons/sea_1/renewal-offers/release-lapsed', idempotencyKey: 'generated',
+        response: { status: 202, body: { job } },
+      },
+      {
+        name: 'listSeasonRenewalOffers paged',
+        run: (sdk) => sdk.seasons.listSeasonRenewalOffers('sea_a/b', { cursor: 'c/1', limit: 50 }),
+        method: 'GET', path: '/v1/seasons/sea_a%2Fb/renewal-offers?cursor=c%2F1&limit=50',
+        response: { status: 200, body: { offers: [], truncated: false, nextCursor: null } },
+        returns: { offers: [], truncated: false, nextCursor: null },
+      },
+      {
+        name: 'listSeasonRenewalOffers first page',
+        run: (sdk) => sdk.seasons.listSeasonRenewalOffers('sea_a/b'),
+        method: 'GET', path: '/v1/seasons/sea_a%2Fb/renewal-offers',
+      },
+      {
+        name: 'retrieveSeasonHostedRenewals paged',
+        run: (sdk) => sdk.seasons.retrieveSeasonHostedRenewals('sea_a/b', { cursor: 'c/2', limit: 500 }),
+        method: 'GET', path: '/v1/seasons/sea_a%2Fb/renewal-hosted?cursor=c%2F2&limit=500',
+      },
+      {
+        name: 'createSeasonRenewalOffers above 100 contracts',
+        run: (sdk) => sdk.seasons.createSeasonRenewalOffers('sea_a/b', { deadlineAt: 1 }, {
+          idempotencyKey: 'offers-1',
+        }),
+        method: 'POST', path: '/v1/seasons/sea_a%2Fb/renewal-offers', body: { deadlineAt: 1 },
+        idempotencyKey: 'offers-1',
+        response: { status: 202, body: run }, returns: run,
+      },
+      {
+        name: 'createSeasonHolderImportFromSeason above 100 holders',
+        run: (sdk) => sdk.seasons.createSeasonHolderImportFromSeason('sea_a/b', {
+          sourceSeasonId: 'sea_0', successorPlanActivationId: 'spa_1',
+        }, { idempotencyKey: 'from-season-1' }),
+        method: 'POST', path: '/v1/seasons/sea_a%2Fb/imports/from-season',
+        body: { sourceSeasonId: 'sea_0', successorPlanActivationId: 'spa_1' }, idempotencyKey: 'from-season-1',
+        response: { status: 202, body: bringAcross }, returns: bringAcross,
+      },
+      {
+        name: 'createSeasonRenewalNotices for one offer batch',
+        run: (sdk) => sdk.seasons.createSeasonRenewalNotices('sea_a/b', { batchId: 'srb_1' }),
+        method: 'POST', path: '/v1/seasons/sea_a%2Fb/renewal-notices', body: { batchId: 'srb_1' },
+      },
+    ]);
+  });
+
+  it('types both answers of the renewal run and the bring-across, and the paged lists', () => {
+    const sdk = new SeatLayer({ secretKey: 'sk_test_abc', fetch: stubFetch([]).fetch });
+    expectTypeOf(sdk.seasons.createSeasonRenewalOffers).returns.resolves
+      .toEqualTypeOf<{ offers: SeasonRenewalOffer[] } | SeasonRenewalOfferJob>();
+    expectTypeOf<SeasonRenewalOfferJob>().toEqualTypeOf<{ job: SeasonBulkJob; batchId: string }>();
+    expectTypeOf(sdk.seasons.createSeasonHolderImportFromSeason).returns.resolves
+      .extract<{ job: SeasonBulkJob }>().toEqualTypeOf<{ job: SeasonBulkJob }>();
+    expectTypeOf(sdk.seasons.releaseSeasonLapsedOffers).returns.resolves.toEqualTypeOf<{ job: SeasonBulkJob }>();
+    expectTypeOf<'holder_import'>().toMatchTypeOf<SeasonBulkJob['kind']>();
+    expectTypeOf<SeasonBulkJobDetail['summary']>().toEqualTypeOf<Record<string, unknown>>();
+    expectTypeOf<Awaited<ReturnType<typeof sdk.seasons.listSeasonRenewalOffers>>['nextCursor']>()
+      .toEqualTypeOf<string | null>();
+    expectTypeOf<Awaited<ReturnType<typeof sdk.seasons.retrieveSeasonHostedRenewals>>['nextCursor']>()
+      .toEqualTypeOf<string | null>();
+  });
+
+  it('sends singleTickets on create and update, and returns the dates it opened', async () => {
+    const singleTicketDates = {
+      direction: 'open', opened: ['ev_1'], closed: [],
+      notOpened: [{ eventKey: 'ev_2', name: 'Night 2', salesState: 'setup', unmet: ['buyerCheckout'] }],
+      jobId: null,
+    };
+    const updated = { season: { key: 'sea_1', singleTickets: true, plans: [] }, singleTicketDates };
+    await expectOperations([
+      {
+        name: 'createSeason with single tickets',
+        run: (sdk) => sdk.seasons.createSeason({
+          name: 'Series', eventKeys: ['ev_1', 'ev_2'], singleTickets: true,
+        }, { idempotencyKey: 'create-singles' }),
+        method: 'POST', path: '/v1/seasons',
+        body: { name: 'Series', eventKeys: ['ev_1', 'ev_2'], singleTickets: true }, idempotencyKey: 'create-singles',
+        response: { status: 201, body: { season: { key: 'sea_1', singleTickets: true, plans: [] } } },
+      },
+      {
+        name: 'createSeason in test mode',
+        run: (sdk) => sdk.seasons.createSeason({ name: 'Rehearsal', eventKeys: ['ev_1', 'ev_2'], mode: 'test' }, { idempotencyKey: 'create-test' }),
+        method: 'POST', path: '/v1/seasons',
+        body: { name: 'Rehearsal', eventKeys: ['ev_1', 'ev_2'], mode: 'test' }, idempotencyKey: 'create-test',
+        response: { status: 201, body: { season: { key: 'sea_2', singleTickets: false, plans: [] } } },
+      },
+      {
+        name: 'updateSeason turning single tickets on',
+        run: (sdk) => sdk.seasons.updateSeason('sea_1', { expectedRevision: 5, singleTickets: true }, {
+          idempotencyKey: 'singles-on',
+        }),
+        method: 'PATCH', path: '/v1/seasons/sea_1', body: { expectedRevision: 5, singleTickets: true },
+        idempotencyKey: 'singles-on', response: { status: 200, body: updated }, returns: updated,
+      },
+    ]);
+    const sdk = new SeatLayer({ secretKey: 'sk_test_abc', fetch: stubFetch([]).fetch });
+    expectTypeOf(sdk.seasons.updateSeason).returns.resolves.toEqualTypeOf<SeasonResult>();
+    expectTypeOf(sdk.seasons.resumeSeasonSales).returns.resolves.toEqualTypeOf<SeasonResult>();
+    expectTypeOf<SeasonResult['singleTicketDates']>().toEqualTypeOf<SeasonSingleTicketDates | undefined>();
+    expectTypeOf<SeasonResult['season']['singleTickets']>().toEqualTypeOf<boolean>();
+    expectTypeOf<'season_singles'>().toMatchTypeOf<SeasonBulkJob['kind']>();
+  });
+
+  it('retries the release of lapsed offers with one key', async () => {
+    const stub = stubFetch([
+      { status: 503, body: { error: 'job_busy' } },
+      { status: 202, body: { job: { jobId: 'sbj_1' } } },
+    ]);
+    const sdk = new SeatLayer({ secretKey: 'sk_test_abc', fetch: stub.fetch, maxRetries: 2 });
+    await sdk.seasons.releaseSeasonLapsedOffers('sea_1');
+    const headers = stub.calls.map((call) => call.init.headers as Record<string, string>);
+    expect(headers[0]!['Idempotency-Key']).toMatch(GENERATED_KEY);
+    expect(headers[1]!['Idempotency-Key']).toBe(headers[0]!['Idempotency-Key']);
+    expect(stub.calls.map((call) => call.init.body)).toEqual([undefined, undefined]);
+  });
+
+  it('retries a bulk refund with one key', async () => {
+    const stub = stubFetch([
+      { status: 503, body: { error: 'unavailable' } },
+      { status: 202, body: { job: { jobId: 'sbj_1' } } },
+    ]);
+    const sdk = new SeatLayer({ secretKey: 'sk_test_abc', fetch: stub.fetch, maxRetries: 2 });
+    await sdk.seasons.refundSeasonPerformance('sea_1', 'ev_1', { amount: 'per_date' });
+    const headers = stub.calls.map((call) => call.init.headers as Record<string, string>);
+    expect(headers[0]!['Idempotency-Key']).toMatch(GENERATED_KEY);
+    expect(headers[1]!['Idempotency-Key']).toBe(headers[0]!['Idempotency-Key']);
+  });
+
+  it('sends price types, season sale settings, holder contacts, and date cancels', async () => {
+    await expectOperations([
+      {
+        name: 'replaceSeasonPackagePrices with a child price',
+        run: (sdk) => sdk.seasons.replaceSeasonPackagePrices('sea_1', 'spl_1', {
+          prices: [
+            { categoryKey: 'stalls', unitPrice: 18_000 },
+            { categoryKey: 'stalls', priceTypeKey: 'child', unitPrice: 9_000 },
+          ],
+        }, { idempotencyKey: 'prices-2' }),
+        method: 'PUT', path: '/v1/seasons/sea_1/plans/spl_1/prices',
+        body: { prices: [
+          { categoryKey: 'stalls', unitPrice: 18_000 },
+          { categoryKey: 'stalls', priceTypeKey: 'child', unitPrice: 9_000 },
+        ] },
+        idempotencyKey: 'prices-2',
+      },
+      {
+        name: 'updateSeason with checkout mode and cutoffs',
+        run: (sdk) => sdk.seasons.updateSeason('sea_1', {
+          expectedRevision: 3, checkoutMode: 'seatlayer', transferCutoffHours: 24, returnCutoffHours: null,
+        }, { idempotencyKey: 'sell-1' }),
+        method: 'PATCH', path: '/v1/seasons/sea_1',
+        body: { expectedRevision: 3, checkoutMode: 'seatlayer', transferCutoffHours: 24, returnCutoffHours: null },
+        idempotencyKey: 'sell-1',
+      },
+      {
+        name: 'createSeasonHolderImport with holder contacts',
+        run: (sdk) => sdk.seasons.createSeasonHolderImport('sea_1', {
+          successorPlanActivationId: 'spa_1',
+          rows: [{
+            rowId: 'r1', holderRef: 'h1', priorPlanActivationId: 'spa_0', priorContractRef: 'c1', labels: ['A-1'],
+            holderEmail: 'ana@example.com', holderName: 'Ana Silva',
+          }],
+        }, { idempotencyKey: 'import-2' }),
+        method: 'POST', path: '/v1/seasons/sea_1/imports',
+        body: {
+          successorPlanActivationId: 'spa_1',
+          rows: [{
+            rowId: 'r1', holderRef: 'h1', priorPlanActivationId: 'spa_0', priorContractRef: 'c1', labels: ['A-1'],
+            holderEmail: 'ana@example.com', holderName: 'Ana Silva',
+          }],
+        },
+        idempotencyKey: 'import-2', response: { status: 201, body: { import: { importId: 'sim_1' } } },
+      },
+      {
+        name: 'createSeasonAmendment cancel with a refund',
+        run: (sdk) => sdk.seasons.createSeasonAmendment('sea_1', {
+          eventKey: 'ev_night_3', kind: 'cancel', refund: 'per_date', reason: 'Storm',
+        }, { idempotencyKey: 'night-3-storm' }),
+        method: 'POST', path: '/v1/seasons/sea_1/amendments',
+        body: { eventKey: 'ev_night_3', kind: 'cancel', refund: 'per_date', reason: 'Storm' },
+        idempotencyKey: 'night-3-storm',
+        response: { status: 201, body: { amendment: { kind: 'cancel' }, refundJob: { jobId: 'sbj_1', kind: 'bulk_refund' } } },
+      },
+      {
+        name: 'createSeasonAmendment postpone',
+        run: (sdk) => sdk.seasons.createSeasonAmendment('sea_1', { eventKey: 'ev_1', kind: 'postpone' }),
+        method: 'POST', path: '/v1/seasons/sea_1/amendments',
+        body: { eventKey: 'ev_1', kind: 'postpone' }, idempotencyKey: 'generated',
+        response: { status: 201, body: { amendment: { kind: 'postpone' } } },
+      },
+    ]);
+  });
+
+  it('types price types on prices, holds, and renewal seats, and the new amendment kinds', () => {
+    expectTypeOf<SeasonPackagePrice['priceTypeKey']>().toEqualTypeOf<SeasonPriceTypeKey>();
+    expectTypeOf<SeasonPackagePrice['priceTypeLabel']>().toEqualTypeOf<string>();
+    expectTypeOf<SeasonPriceList['packages'][number]['prices'][number]>().toEqualTypeOf<SeasonPackagePrice>();
+    expectTypeOf<SeasonHold['allocations'][number]['items'][number]['priceTypeKey']>().toEqualTypeOf<string>();
+    expectTypeOf<NonNullable<SeasonRenewalOffer['seats']>[number]['priceTypeKey']>().toEqualTypeOf<string>();
+    expectTypeOf<'performance_added'>().toMatchTypeOf<SeasonAmendment['kind']>();
+    expectTypeOf<'performance_removed'>().toMatchTypeOf<SeasonAmendment['kind']>();
+    expectTypeOf<'cancel'>().toMatchTypeOf<SeasonAmendment['kind']>();
+    expectTypeOf<SeasonBulkJobDetail['failedItems'][number]['error']>().toEqualTypeOf<string | null>();
+  });
+
+  it('maps renewal by API: the quote, the phone intent, the checkout, and a decline reason', async () => {
+    const quote = {
+      offerId: 'sro_a/b', state: 'offered', totalMinor: 13_500, currency: 'GBP',
+      lines: [{ label: 'A-1', category: 'standard', priceTypeKey: 'adult', amountMinor: 9_000 }],
+      performances: [{ eventKey: 'ev_1', name: 'Night 1', startsAt: 1_790_000_000_000 }],
+      problem: null,
+    };
+    const started = {
+      orderId: 'ord_1', totalMinor: 13_500, currency: 'GBP', expiresAt: 1_790_000_900_000,
+      payment: { url: 'https://checkout.provider.example/pay' },
+    };
+    const declined = { offer: { offerId: 'sro_a/b', state: 'declined', declineReason: 'Moving away' } };
+    await expectOperations([
+      {
+        name: 'retrieveSeasonRenewalQuote',
+        run: (sdk) => sdk.seasons.retrieveSeasonRenewalQuote('sea_a/b', 'sro_a/b'),
+        method: 'GET', path: '/v1/seasons/sea_a%2Fb/renewal-offers/sro_a%2Fb/quote',
+        response: { status: 200, body: quote }, returns: quote,
+      },
+      {
+        name: 'createSeasonRenewalIntent',
+        run: (sdk) => sdk.seasons.createSeasonRenewalIntent('sea_a/b', 'sro_a/b'),
+        method: 'POST', path: '/v1/seasons/sea_a%2Fb/renewal-offers/sro_a%2Fb/intent',
+        response: { status: 200, body: { offer: { offerId: 'sro_a/b', state: 'intent_received' } } },
+      },
+      {
+        name: 'createSeasonRenewalCheckout',
+        run: (sdk) => sdk.seasons.createSeasonRenewalCheckout('sea_a/b', 'sro_a/b', {
+          returnUrl: 'https://tickets.example/renewed', buyerEmail: 'ana@example.com',
+          buyerName: 'Ana Silva', provider: 'stripe',
+        }, { idempotencyKey: 'renew-ana-2027' }),
+        method: 'POST', path: '/v1/seasons/sea_a%2Fb/renewal-offers/sro_a%2Fb/checkout',
+        body: {
+          returnUrl: 'https://tickets.example/renewed', buyerEmail: 'ana@example.com',
+          buyerName: 'Ana Silva', provider: 'stripe',
+        },
+        idempotencyKey: 'renew-ana-2027', response: { status: 201, body: started }, returns: started,
+      },
+      {
+        name: 'createSeasonRenewalCheckout without a key',
+        run: (sdk) => sdk.seasons.createSeasonRenewalCheckout('sea_1', 'sro_1', {
+          returnUrl: 'https://tickets.example/renewed',
+        }),
+        method: 'POST', path: '/v1/seasons/sea_1/renewal-offers/sro_1/checkout',
+        body: { returnUrl: 'https://tickets.example/renewed' }, idempotencyKey: 'generated',
+        response: { status: 201, body: started },
+      },
+      {
+        name: 'declineSeasonRenewalOffer with a reason',
+        run: (sdk) => sdk.seasons.declineSeasonRenewalOffer('sea_a/b', 'sro_a/b', { reason: 'Moving away' }),
+        method: 'POST', path: '/v1/seasons/sea_a%2Fb/renewal-offers/sro_a%2Fb/decline',
+        body: { reason: 'Moving away' }, response: { status: 200, body: declined },
+      },
+      {
+        name: 'declineSeasonRenewalOffer without a reason',
+        run: (sdk) => sdk.seasons.declineSeasonRenewalOffer('sea_1', 'sro_1'),
+        method: 'POST', path: '/v1/seasons/sea_1/renewal-offers/sro_1/decline', body: {},
+      },
+    ]);
+  });
+
+  it('retries a renewal checkout with one key, but sends the intent once', async () => {
+    const stub = stubFetch([
+      { status: 503, body: { error: 'unavailable' } },
+      { status: 201, body: { orderId: 'ord_1' } },
+      { status: 429, body: { error: 'rate_limited' }, headers: { 'retry-after': '0' } },
+      { status: 201, body: { orderId: 'ord_1' } },
+      { status: 503, body: { error: 'unavailable' } },
+    ]);
+    const sdk = new SeatLayer({ secretKey: 'sk_test_abc', fetch: stub.fetch, maxRetries: 2 });
+    const params = { returnUrl: 'https://tickets.example/renewed' };
+
+    await sdk.seasons.createSeasonRenewalCheckout('sea_1', 'sro_1', params);
+    await sdk.seasons.createSeasonRenewalCheckout('sea_1', 'sro_1', params, { idempotencyKey: 'renew-1' });
+    await expect(sdk.seasons.createSeasonRenewalIntent('sea_1', 'sro_1')).rejects.toBeInstanceOf(SeatLayerError);
+
+    const headers = stub.calls.map((call) => call.init.headers as Record<string, string>);
+    expect(stub.calls.map((call) => new URL(call.url).pathname)).toEqual([
+      ...Array(4).fill('/v1/seasons/sea_1/renewal-offers/sro_1/checkout'),
+      '/v1/seasons/sea_1/renewal-offers/sro_1/intent',
+    ]);
+    expect(headers[0]!['Idempotency-Key']).toMatch(GENERATED_KEY);
+    expect(headers[1]!['Idempotency-Key']).toBe(headers[0]!['Idempotency-Key']);
+    expect(headers[2]!['Idempotency-Key']).toBe('renew-1');
+    expect(headers[3]!['Idempotency-Key']).toBe('renew-1');
+    expect(headers[4]!['Idempotency-Key']).toBeUndefined();
+    expect(stub.calls[4]!.init.body).toBeUndefined();
+    expect(stub.responses).toHaveLength(0);
+  });
+
+  it('types the renewal quote, the started checkout, and the decline reason', () => {
+    expectTypeOf<SeasonRenewalOffer['declineReason']>().toEqualTypeOf<string | null>();
+    expectTypeOf<SeasonRenewalQuote['totalMinor']>().toEqualTypeOf<number | null>();
+    expectTypeOf<'prices_missing'>().toMatchTypeOf<NonNullable<SeasonRenewalQuote['problem']>>();
+    expectTypeOf<SeasonRenewalCheckoutStarted['payment']['url']>().toEqualTypeOf<string | null>();
+    const sdk = new SeatLayer({ secretKey: 'sk_test_abc', fetch: stubFetch([]).fetch });
+    expectTypeOf(sdk.seasons.createSeasonRenewalCheckout).returns.resolves
+      .toEqualTypeOf<SeasonRenewalCheckoutStarted>();
+    expectTypeOf(sdk.holders.createHolderRenewalCheckout).returns.resolves
+      .toEqualTypeOf<SeasonRenewalCheckoutStarted>();
+  });
+
+  it('names the job voiding a cancelled date, and sizes a holder import call by its dates', async () => {
+    expect(seasonDateCancelVoidJobId('amd_1')).toBe('sbj_void_amd_1');
+    expectTypeOf<'date_cancel_void'>().toMatchTypeOf<SeasonBulkJob['kind']>();
+    expectTypeOf<SeasonSingleTicketDates['jobRefused']>().toEqualTypeOf<string | undefined>();
+    expect([1, 20, 21, 50].map(seasonHolderImportRowsPerCall)).toEqual([100, 100, 95, 43]);
+
+    const stub = stubFetch([{ status: 422, body: {
+      error: 'invalid_rows', code: 'invalid_rows', message: 'At most 43 rows a call for this package.', maxRows: 43,
+    } }]);
+    const sdk = new SeatLayer({ secretKey: 'sk_test_abc', fetch: stub.fetch });
+    const error = await sdk.seasons.createSeasonHolderImport('sea_1', { successorPlanActivationId: 'spa_1', rows: [] })
+      .catch((caught: unknown) => caught);
+    expect(error).toBeInstanceOf(SeatLayerValidationError);
+    expect((error as SeatLayerValidationError).code).toBe('invalid_rows');
+    expect((error as SeatLayerValidationError).body.maxRows).toBe(43);
+  });
+
+  it('exposes exactly 87 season operations, plus the polling helpers and the import alias', () => {
+    const sdk = new SeatLayer({ secretKey: 'sk_test_abc', fetch: stubFetch([]).fetch });
+    const methods = Object.getOwnPropertyNames(Object.getPrototypeOf(sdk.seasons))
+      .filter((name) => name !== 'constructor');
+    const helpers = methods.filter((name) => name.startsWith('waitFor') || name === 'importSeasonHolders');
+    expect(helpers.sort()).toEqual([
+      'importSeasonHolders', 'waitForSeasonBooking', 'waitForSeasonLifecycle', 'waitForSeasonRenewal',
+    ]);
+    expect(methods.length - helpers.length).toBe(87);
+  });
+
+  it('types CSV exports as text and the 204 plan delete as void', () => {
+    const sdk = new SeatLayer({ secretKey: 'sk_test_abc', fetch: stubFetch([]).fetch });
+    expectTypeOf(sdk.seasons.exportSeasonHoldersCsv).returns.resolves.toEqualTypeOf<string>();
+    expectTypeOf(sdk.seasons.exportSeasonOrdersCsv).returns.resolves.toEqualTypeOf<string>();
+    expectTypeOf(sdk.seasons.deleteSeasonPlan).returns.resolves.toEqualTypeOf<void>();
+  });
+
+  it('asks for CSV and still maps an export failure to the typed error', async () => {
+    const stub = stubFetch([
+      { status: 200, rawBody: 'a,b\n', headers: { 'content-type': 'text/csv' } },
+      { status: 404, body: { error: 'not_found', message: 'No such Season.' } },
+    ]);
+    const sdk = new SeatLayer({ secretKey: 'sk_test_abc', fetch: stub.fetch });
+    await expect(sdk.seasons.exportSeasonOrdersCsv('sea_1')).resolves.toBe('a,b\n');
+    await expect(sdk.seasons.exportSeasonOrdersCsv('sea_missing')).rejects.toBeInstanceOf(SeatLayerError);
+    expect((stub.calls[0]!.init.headers as Record<string, string>).Accept).toContain('text/csv');
+  });
+
+  it('sends no body when an optional season body is left out', async () => {
+    await expectOperations([
+      {
+        name: 'createSeasonCheckoutTest without params',
+        run: (sdk) => sdk.seasons.createSeasonCheckoutTest('sea_1'),
+        method: 'POST', path: '/v1/seasons/sea_1/checkout-tests', idempotencyKey: 'generated',
+      },
+      {
+        name: 'refundSeasonOrder in full',
+        run: (sdk) => sdk.seasons.refundSeasonOrder('sea_1', 'ord_1'),
+        method: 'POST', path: '/v1/seasons/sea_1/orders/ord_1/refund', idempotencyKey: 'generated',
+      },
+      {
+        name: 'createSeasonRenewalNotices for every offer',
+        run: (sdk) => sdk.seasons.createSeasonRenewalNotices('sea_1'),
+        method: 'POST', path: '/v1/seasons/sea_1/renewal-notices',
+      },
+    ]);
+  });
+
+  it('retries a header-replay price PUT with one key, but never retries unsupported or one-time-secret calls', async () => {
+    const stub = stubFetch([
+      { status: 503, body: { error: 'unavailable' } },
+      { status: 200, body: { planKey: 'spl_1', currency: 'GBP', prices: [] } },
+      { status: 429, body: { error: 'rate_limited' }, headers: { 'retry-after': '0' } },
+      { status: 200, body: { holders: [], nextCursor: null } },
+      { status: 503, body: { error: 'unavailable' } },
+      { status: 429, body: { error: 'rate_limited' }, headers: { 'retry-after': '0' } },
+      { status: 503, body: { error: 'unavailable' } },
+    ]);
+    const sdk = new SeatLayer({ secretKey: 'sk_test_abc', fetch: stub.fetch, maxRetries: 2 });
+
+    await sdk.seasons.replaceSeasonPackagePrices('sea_1', 'spl_1', { prices: [] });
+    await sdk.seasons.createSeasonHolderImportFromSeason('sea_1', {
+      sourceSeasonId: 'sea_0', successorPlanActivationId: 'spa_1',
+    });
+    await expect(sdk.seasons.resendSeasonOrderTickets('sea_1', 'ord_1')).rejects.toBeInstanceOf(SeatLayerError);
+    await expect(sdk.seasons.rotateSeasonRenewalOfferLink('sea_1', 'sro_1'))
+      .rejects.toBeInstanceOf(SeatLayerRateLimitError);
+    await expect(sdk.seasons.returnSeasonOccurrenceInventory('sea_1', 'ev_1', {
+      actionId: 'sra_1', bookingRef: 'order_1', planActivationId: 'spa_1', labels: ['A-1'],
+      source: { bookingActionId: 'sba_1' },
+    })).rejects.toBeInstanceOf(SeatLayerError);
+
+    const headers = stub.calls.map((call) => call.init.headers as Record<string, string>);
+    expect(stub.calls.map((call) => call.init.method)).toEqual(['PUT', 'PUT', 'POST', 'POST', 'POST', 'POST', 'POST']);
+    expect(headers[0]!['Idempotency-Key']).toMatch(GENERATED_KEY);
+    expect(headers[1]!['Idempotency-Key']).toBe(headers[0]!['Idempotency-Key']);
+    expect(headers[3]!['Idempotency-Key']).toBe(headers[2]!['Idempotency-Key']);
+    for (const index of [4, 5, 6]) expect(headers[index]!['Idempotency-Key']).toBeUndefined();
     expect(stub.responses).toHaveLength(0);
   });
 });

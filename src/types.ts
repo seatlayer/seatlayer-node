@@ -519,6 +519,7 @@ export type EventHostingRegion =
   | 'south-america' | 'asia-pacific' | 'northeast-asia'
   | 'southeast-asia' | 'oceania' | 'africa' | 'middle-east';
 
+/** Every public webhook event name, in the order the API lists them. */
 export type WebhookEventName =
   | 'seat.booked'
   | 'seat.released'
@@ -528,6 +529,19 @@ export type WebhookEventName =
   | 'hold.extended'
   | 'event.created'
   | 'event.soldout'
+  | 'object.resale.listed'
+  | 'object.resale.unlisted'
+  | 'object.resale.sold'
+  | 'customer.created'
+  | 'customer.email_changed'
+  | 'order.paid'
+  | 'order.refunded'
+  | 'order.cancelled'
+  | 'season.ticket.transfer_sent'
+  | 'season.ticket.transferred'
+  | 'season.ticket.transfer_cancelled'
+  | 'season.ticket.issued'
+  | 'season.ticket.voided'
   | 'season.structure.activated'
   | 'season.structure.closed'
   | 'season.structure.archived'
@@ -542,6 +556,8 @@ export type WebhookEventName =
   | 'season.booking.confirmed'
   | 'season.booking.cancelled'
   | 'season.booking.emergency_requested'
+  | 'season.occurrence.returned'
+  | 'season.occurrence.reclaimed'
   | 'season.renewal.offered'
   | 'season.renewal.intent_received'
   | 'season.renewal.renewed'
@@ -549,7 +565,18 @@ export type WebhookEventName =
   | 'season.renewal.lapsed'
   | 'season.renewal.released'
   | 'season.operation.partial_terminal'
-  | 'season.amendment.applied';
+  | 'season.amendment.applied'
+  | 'season.performance.added'
+  | 'season.performance.removed'
+  | 'season.performance.past'
+  | 'season.performance.postponed'
+  | 'season.performance.cancelled'
+  | 'season.performance.rescheduled'
+  | 'season.bulk_action.completed'
+  | 'season.order.paid'
+  | 'season.order.refunded'
+  | 'series.created'
+  | 'series.dates_added';
 
 export interface Webhook {
   id: string;
