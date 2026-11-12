@@ -490,7 +490,7 @@ changes the bytes and verification will fail.
 import express from 'express';
 import { verifyWebhook, WebhookVerificationError } from '@seatlayer/server';
 
-app.post('/webhooks/seatlayer', express.raw({ type: 'application/json' }), (req, res) => {
+app.post('/webhooks/seatlayer', express.raw({ type: 'application/json' }), async (req, res) => {
   try {
     const event = verifyWebhook({
       payload: req.body,                                   // Buffer, not parsed JSON
