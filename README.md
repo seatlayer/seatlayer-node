@@ -395,9 +395,9 @@ const access = await seatlayer.channels.createBuyerAccessSession(eventKey, {
 ```
 
 For a managed invitation URL, use `createAccessLink`, persist the show-once URL immediately, and
-use `rotateAccessLink` or `revokeAccessLink` if it is misplaced. Channel reports use `bookedValue`
-and `includesBookedValue` for configured-price snapshots; `revenue` and `includesRevenue` remain
-deprecated response aliases for compatibility.
+use `rotateAccessLink` or `revokeAccessLink` if it is misplaced. In channel reports, `bookedValue`
+is the total of the prices set on the booked seats, and `includesBookedValue` says whether it is
+included. `revenue` and `includesRevenue` are older names for the same values and still work.
 
 ## Listing and pagination
 
@@ -554,10 +554,10 @@ operations (`createSeason`, `updateSeason`, `deleteSeason`, `publishSeason`, `cr
 `Idempotency-Key` and reuses it for every attempt. All remaining SDK mutations are sent once; some
 have a server-side domain idempotency contract, but the SDK does not retry them automatically.
 
-**Booking safety.** Direct and box-office bookings have the server's exact-selection plus
-`bookingRef` safeguard, but the SDK still sends them once. Holds, best-available operations,
-show-once secret creation and raw mutations are also single-attempt; reconcile an unknown outcome
-before trying again.
+**Booking safety.** Sending the same direct or box-office booking again with the same `bookingRef`
+never sells a seat twice, but the SDK still sends each booking once. Holds, best-available
+operations, show-once secret creation and raw mutations are also single-attempt; reconcile an
+unknown outcome before trying again.
 
 ```ts
 new SeatLayer({
