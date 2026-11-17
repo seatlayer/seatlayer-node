@@ -22,11 +22,12 @@ webhooks through one typed ticketing API client.
 > browser, a mobile app, or anything a ticket buyer can open. Browser surfaces get short-lived,
 > origin-bound tokens that you mint here. See [Embedding the control room](#embedding-the-control-room).
 
-This SDK is the **Platform inventory** product. SeatLayer owns seating state, configured prices,
-holds, booking concurrency, the inventory ledger, allocation reporting, and inventory webhooks.
-Your platform owns its event catalogue, buyer accounts, payments, commercial Orders, tickets,
-email/PDF delivery, refunds, scanning, and customer support. No booking method in this package
-accepts buyer, payment, ticket, email, or refund data.
+**What SeatLayer keeps and what you keep.** With your own checkout, SeatLayer keeps the seats:
+holds, bookings, the prices set on the chart, sales channels and webhooks. Your platform keeps the
+buyer, the payment, the order, the tickets and refunds, and no booking method takes buyer, payment
+or ticket data. For events and seasons sold through SeatLayer's checkout, `orders` reads, refunds
+and resends those orders. `holders` manages season ticket holders: their tickets, transfers,
+returns and renewals.
 
 Two-step shape: the buyer picks and holds seats in the client with your public key, then this SDK confirms the booking from your server with your secret key while your platform keeps checkout and its own payment provider.
 
@@ -125,15 +126,15 @@ await seatlayer.inventory.bookBestAvailable(eventKey, { qty: 2, bookingRef: 'pho
 await seatlayer.inventory.book(eventKey, { labels: ['A-1', 'A-2'], bookingRef: 'comp-14' });
 ```
 
-`bookingRef` is your stable join between SeatLayer inventory and your own commercial order. The SDK
+`bookingRef` is your stable link between a SeatLayer booking and your own order. The SDK
 trims it, refuses an empty value before making a request, and echoes the normalized reference in
 booking and cancellation results. It is not a SeatLayer Order id.
 
 ## Booking History
 
-Booking History is the inventory ledger, not a commerce or fulfilment record. It contains labels,
-category/section/channel attribution, quantities, configured-value snapshots, and lifecycle events.
-It never contains buyer, payment, ticket, email, refund, or Door fields.
+`listBookings` and `retrieveBooking` show what was booked: seat labels, category, section and
+channel, quantities and the price set on each seat when it was booked; `retrieveBooking` also
+lists the changes since, up to the latest 200. They hold no buyer, payment or ticket details.
 
 ```ts
 const page = await seatlayer.inventory.listBookings(eventKey, {
@@ -148,8 +149,8 @@ const detail = await seatlayer.inventory.retrieveBooking(
 );
 ```
 
-To release booked inventory, first update the commercial/refund state in your own system as your
-workflow requires, then cancel with the same reference that booked it:
+To release booked inventory, first record the refund or cancellation in your own system, then
+cancel with the same reference that booked it:
 
 ```ts
 await seatlayer.inventory.unbook(eventKey, {
@@ -158,8 +159,8 @@ await seatlayer.inventory.unbook(eventKey, {
 });
 ```
 
-SeatLayer releases inventory and records the lifecycle entry; it does not move or refund money,
-void a platform-owned ticket, send an email/PDF, or update a platform-owned scanner.
+`unbook` puts the seats back on sale and records the change. It does not refund money or cancel,
+email or re-scan tickets your platform issued.
 
 ## Fixed Renewable Seasons
 
@@ -459,10 +460,8 @@ const session = await seatlayer.sessions.createManageSession(eventKey, {
 
 The raw API safely defaults an omitted list to view-only (`event:view`). The SDK deliberately
 requires an explicit non-empty `capabilities` list so the browser authority is visible during code
-review. Grant only what the page needs. Viewing, blocking, cancellation, reports, and channels are
-Platform/SDK inventory work. `event:cancel` returns a Platform booking's inventory to sale but does
-not move gateway money. Eligible Managed Ticketing refunds use the separate `event:refund`
-capability.
+review. Grant only what the page needs. `event:cancel` puts a booking back on sale; it does not
+refund anyone. To refund an order that SeatLayer's checkout took, grant `event:refund`.
 
 The same pattern embeds the Designer in your own UI:
 
