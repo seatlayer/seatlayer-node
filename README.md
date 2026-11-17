@@ -636,12 +636,11 @@ outcome before trying again.
 
 ### Can I use my own payment provider?
 
-Yes. This server SDK does not process payment in a Platform/SDK integration. Inspect the hold,
-compute the charge from each returned item's authoritative `unitPrice`, `quantity`, and `currency`,
-take the money through whichever provider you already use, and then book the hold with your order
-id as `bookingRef`. SeatLayer owns seating state, holds, booking concurrency, and the inventory
-ledger in this integration; your platform owns payments, commercial orders, tickets, delivery,
-and refunds. Managed Ticketing is a separate product path with organizer-connected payments.
+Yes. Nothing in this SDK takes a payment: your server charges the hold's total through the provider
+you already use, then books the seats with your order id as `bookingRef`, and SeatLayer never
+touches the money. If you would rather SeatLayer run the checkout for an event
+(`events.replaceEventBuyerCheckout`), buyers pay through one of 14 payment gateways, including
+Stripe, PayPal and Square, straight into your own account.
 
 ## Continue your Node.js integration
 
