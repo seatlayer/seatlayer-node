@@ -25,8 +25,9 @@ webhooks through one typed ticketing API client.
 **What SeatLayer keeps and what you keep.** With your own checkout, SeatLayer keeps the seats:
 holds, bookings, the prices set on the chart, sales channels and webhooks. Your platform keeps the
 buyer, the payment, the order, the tickets and refunds, and no booking method takes buyer, payment
-or ticket data. For events and seasons sold through SeatLayer's checkout, `orders` reads, refunds
-and resends those orders. `holders` manages season ticket holders: their tickets, transfers,
+or ticket data. For events and seasons sold through SeatLayer's checkout, `orders` lists those
+orders and refunds, cancels and resends event orders; season orders are refunded and resent with
+`seasons.refundSeasonOrder` and `seasons.resendSeasonOrderTickets`. `holders` manages season ticket holders: their tickets, transfers,
 returns and renewals.
 
 **How it works:** the buyer picks and holds seats in your website or app with your public key. Your server then reads the hold, takes the payment through your own provider, and books the seats with this SDK and your secret key.
@@ -35,7 +36,7 @@ returns and renewals.
 
 ## Scale evidence
 
-Benchmarked on public 100,000-, 150,000- and 200,000-seat venue fixtures on 15 September 2026: 200,000 seats chart-ready in 1.95 s, desktop, local production build. Tested at 10,000 concurrent buyers on one event: seat hold p99 9 ms, zero server errors. Method, fixtures and raw runs: https://github.com/seatlayer/seatlayer-performance. Live 200,000-seat stadium demo: https://app.seatlayer.io/demo/play/century-stadium-200k.
+Benchmarked on public 100,000-, 150,000- and 200,000-seat venue fixtures on 15 September 2026: 200,000 seats chart-ready in 1.95 s, desktop, local production build. Tested at 10,000 simulated concurrent buyers on one 12,000-seat event (18 September 2026): engine-side hold latency p99 9 ms, zero server errors. Method, fixtures and run files: https://github.com/seatlayer/seatlayer-performance. Live 200,000-seat stadium demo: https://app.seatlayer.io/demo/play/century-stadium-200k.
 
 ## Install the Node.js seat booking SDK
 
@@ -199,10 +200,10 @@ const published = await seatlayer.seasons.waitForSeasonLifecycle(publication);
 ```
 
 Activating a season does not publish its Plans, and publishing does not open
-sales: `openSeasonSales` does. Until a checkout test or the buyer rehearsal
-below has passed, `openSeasonSales` answers with a `checkout_test_missing`
-warning, and the season stays off your SeatLayer website until you set
-`audience: 'public'`.
+sales: `openSeasonSales` does. With your own checkout, until a checkout test or
+the buyer rehearsal below has passed, `openSeasonSales` answers with a
+`checkout_test_missing` warning. The season stays off your SeatLayer website
+until you set `audience: 'public'`.
 Create all additional fixed Plans while the Season is still a draft. Each Plan
 is immutable after activation; published Plans can be superseded only while
 sales are closed or ended.
@@ -242,11 +243,7 @@ await seatlayer.seasons.validateSeasonBuyerRehearsal(seasonKey);
 
 Before you open sales, run one test hold, booking and cancellation with their
 webhooks, then call `validateSeasonBuyerRehearsal(seasonKey)`. It finds those
-test records itself, so it takes no body. Until a test like this or a checkout
-test has passed, opening sales answers with a `checkout_test_missing` warning. A
-season hold lists each date's seat, category and quantity but no price: when you
-run your own checkout, you set the package price and take the payment, and you
-issue the tickets.
+test records itself, so it takes no body.
 
 ### Incumbent import and same-seat renewal
 
@@ -396,8 +393,7 @@ const access = await seatlayer.channels.createBuyerAccessSession(eventKey, {
 
 For a managed invitation URL, use `createAccessLink`, persist the show-once URL immediately, and
 use `rotateAccessLink` or `revokeAccessLink` if it is misplaced. In channel reports, `bookedValue`
-is the total of the prices set on the booked seats, and `includesBookedValue` says whether it is
-included. `revenue` and `includesRevenue` are older names for the same values and still work.
+is the total of the prices set on the booked seats, and `includesBookedValue` says whether the report includes it. `revenue` and `includesRevenue` are older names for the same values and still work.
 
 ## Listing and pagination
 
