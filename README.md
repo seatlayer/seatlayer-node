@@ -197,29 +197,30 @@ const publication = await seatlayer.seasons.publishSeasonPlan(
 const published = await seatlayer.seasons.waitForSeasonLifecycle(publication);
 ```
 
-Activation does not publish a Plan, publication does not open sales, and the
-audience remains `embed_only`. `openSeasonSales` deliberately returns a
-conflict until the S04 buyer hold/book/cancel/webhook rehearsal record exists.
+Activating a season does not publish its Plans, and publishing does not open
+sales: `openSeasonSales` does. Until a checkout test or the buyer rehearsal
+below has passed, `openSeasonSales` answers with a `checkout_test_missing`
+warning, and the season stays off your SeatLayer website until you set
+`audience: 'public'`.
 Create all additional fixed Plans while the Season is still a draft. Each Plan
 is immutable after activation; published Plans can be superseded only while
 sales are closed or ended.
 
-A test Season is never promoted. `duplicateSeasonToLive` requires an explicit
-set of compatible live Event keys, creates new Season and Plan identities, and
-keeps sales closed. Lifecycle calls are single-attempt domain operations. If a
-response is non-terminal, poll only its retained `Location` through
-`waitForSeasonLifecycle`; do not invent a new action.
+A test season never becomes live. `duplicateSeasonToLive` copies it onto the
+live events you name, as a new season with its sales closed. If a lifecycle call
+answers before it has finished, wait with `waitForSeasonLifecycle` instead of
+sending a new action.
 
 ### Season buyer integration
 
-Mint the exact-origin browser session from trusted server code, keep its `bss_`
-token in memory, and pass it to the distinct JavaScript `SeasonPicker`. Before
-charging, retrieve the Season hold and use its trusted allocation identity. It
-contains Event, seat, category, optional tier, and quantity, but no commercial
-amount: `pricingAuthority` is `"host"` and `authoritativeAmountIncluded` is
-`false`. Calculate and charge the package price in your own trusted system.
-Book and cancel with caller-stable identities; cancellation has no implicit
-future-right policy.
+Create a buyer session for one website origin on your server, keep its `bss_`
+token in memory and pass it to the JavaScript `SeasonPicker`. Before charging,
+read the season hold: it lists the event, seat, category, optional tier and
+quantity for each date but no price (`pricingAuthority` is `"host"` and
+`authoritativeAmountIncluded` is `false`), so you calculate and charge the
+package price yourself. Book and cancel with ids you choose and keep, so a
+repeat is safe; a cancellation says what happens to the holder's renewal right
+through `rightDisposition`.
 
 ```ts
 const session = await seatlayer.seasons.createSeasonBuyerAccessSession(seasonKey, {
@@ -238,14 +239,13 @@ await seatlayer.seasons.cancelSeasonBooking(seasonKey, 'sba_order_1183', {
 await seatlayer.seasons.validateSeasonBuyerRehearsal(seasonKey);
 ```
 
-Rehearsal validation has no request body. SeatLayer automatically matches the
-retained hold, booking, cancellation, and successful webhook deliveries, then
-records an audit checkpoint. Do not copy internal action or subscription IDs
-into an operator form.
-
-Version `0.7.0` includes this retained-evidence validation path. A successful
-validation opens inventory sales only; your platform remains responsible for
-price, payment, orders, tax, refunds, tickets, and passes.
+Before you open sales, run one test hold, booking and cancellation with their
+webhooks, then call `validateSeasonBuyerRehearsal(seasonKey)`. It finds those
+test records itself, so it takes no body. Until a test like this or a checkout
+test has passed, opening sales answers with a `checkout_test_missing` warning. A
+season hold lists each date's seat, category and quantity but no price: when you
+run your own checkout, you set the package price and take the payment, and you
+issue the tickets.
 
 ### Incumbent import and same-seat renewal
 
@@ -291,8 +291,8 @@ const created = await seatlayer.seasons.createSeasonRenewalOffers(
 if ('job' in created) return followRenewalRun(created.job, created.batchId);
 const { offers } = created;
 
-// Browser intent is not payment. Inspect and commit only after your trusted
-// host has made its commercial decision with the exact immutable Plan.
+// A buyer's renewal click is not a payment. Commit only after your own
+// checkout has taken the payment for this Plan.
 const inspected = await seatlayer.seasons.inspectSeasonRenewalOffer(seasonKey, offers[0]!.offerId);
 const accepted = await seatlayer.seasons.commitSeasonRenewalOffer(seasonKey, inspected.offer.offerId, {
   commitActionId: 'sba_renewal_ada_2027',
@@ -308,8 +308,8 @@ Renewal intent normally comes from a browser session bound to the exact `buyerRe
 a renewal taken by phone or at the box office, record it with your secret key first:
 `createSeasonRenewalIntent(seasonKey, offerId)`, then take the payment and commit. A decline
 can carry the holder's reason: `declineSeasonRenewalOffer(seasonKey, offerId, { reason })`.
-Extension is explicit and pre-lapse; no default extension is invented while
-organizer bounds and permission policy remain an owner-open rollout decision.
+To give a holder more time, call `extendSeasonRenewalOffer(seasonKey, offerId, deadlineAt)`
+before the offer lapses; nothing is extended by default.
 
 ### Renewal with SeatLayer checkout
 
