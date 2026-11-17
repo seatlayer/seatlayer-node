@@ -22,19 +22,21 @@ webhooks through one typed ticketing API client.
 > browser, a mobile app, or anything a ticket buyer can open. Browser surfaces get short-lived,
 > origin-bound tokens that you mint here. See [Embedding the control room](#embedding-the-control-room).
 
-This SDK is the **Platform inventory** product. SeatLayer owns seating state, configured prices,
-holds, booking concurrency, the inventory ledger, allocation reporting, and inventory webhooks.
-Your platform owns its event catalogue, buyer accounts, payments, commercial Orders, tickets,
-email/PDF delivery, refunds, scanning, and customer support. No booking method in this package
-accepts buyer, payment, ticket, email, or refund data.
+**What SeatLayer keeps and what you keep.** With your own checkout, SeatLayer keeps the seats:
+holds, bookings, the prices set on the chart, sales channels and webhooks. Your platform keeps the
+buyer, the payment, the order, the tickets and refunds, and no booking method takes buyer, payment
+or ticket data. For events and seasons sold through SeatLayer's checkout, `orders` lists those
+orders and refunds, cancels and resends event orders; season orders are refunded and resent with
+`seasons.refundSeasonOrder` and `seasons.resendSeasonOrderTickets`. `holders` manages season ticket holders: their tickets, transfers,
+returns and renewals.
 
-Two-step shape: the buyer picks and holds seats in the client with your public key, then this SDK confirms the booking from your server with your secret key while your platform keeps checkout and its own payment provider.
+**How it works:** the buyer picks and holds seats in your website or app with your public key. Your server then reads the hold, takes the payment through your own provider, and books the seats with this SDK and your secret key.
 
-**Start here:** [Quickstart](https://docs.seatlayer.io/start/quickstart/) · [Holds and checkout](https://docs.seatlayer.io/buyer-sdk/holds-and-checkout/) · [Node.js server SDK guide](https://docs.seatlayer.io/server-sdk/node/) · [SDK catalog](https://docs.seatlayer.io/sdk-catalog.json) · [Pricing](https://seatlayer.io/pricing/): $0 entry, 100 free confirmed-sold-seat credits per organization each month, then $0.10 down to $0.05 a credit, and credits never expire.
+**Start here:** [Quickstart](https://docs.seatlayer.io/start/quickstart/) · [Holds and checkout](https://docs.seatlayer.io/buyer-sdk/holds-and-checkout/) · [Node.js server SDK guide](https://docs.seatlayer.io/server-sdk/node/) · [SDK catalog](https://docs.seatlayer.io/sdk-catalog.json) · [Pricing](https://seatlayer.io/pricing/): 100 sold seats free every month, then 10¢ down to 5¢ per sold seat. No subscription, and purchased credits never expire. Test mode is free.
 
 ## Scale evidence
 
-Benchmarked on public 100,000-, 150,000- and 200,000-seat venue fixtures on 15 September 2026: 200,000 seats chart-ready in 1.95 s, desktop, local production build. Fixtures, method and run logs: https://github.com/seatlayer/seatlayer-performance. Live 200,000-seat stadium demo: https://app.seatlayer.io/demo/play/century-stadium-200k. This is renderer evidence, not a concurrent-buyer claim.
+Benchmarked on public 100,000-, 150,000- and 200,000-seat venue fixtures on 15 September 2026: 200,000 seats chart-ready in 1.95 s, desktop, local production build. Tested at 10,000 simulated concurrent buyers on one 12,000-seat event (18 September 2026): engine-side hold latency p99 9 ms, zero server errors. Method, fixtures and run files: https://github.com/seatlayer/seatlayer-performance. Live 200,000-seat stadium demo: https://app.seatlayer.io/demo/play/century-stadium-200k.
 
 ## Install the Node.js seat booking SDK
 
@@ -125,15 +127,15 @@ await seatlayer.inventory.bookBestAvailable(eventKey, { qty: 2, bookingRef: 'pho
 await seatlayer.inventory.book(eventKey, { labels: ['A-1', 'A-2'], bookingRef: 'comp-14' });
 ```
 
-`bookingRef` is your stable join between SeatLayer inventory and your own commercial order. The SDK
+`bookingRef` is your stable link between a SeatLayer booking and your own order. The SDK
 trims it, refuses an empty value before making a request, and echoes the normalized reference in
 booking and cancellation results. It is not a SeatLayer Order id.
 
 ## Booking History
 
-Booking History is the inventory ledger, not a commerce or fulfilment record. It contains labels,
-category/section/channel attribution, quantities, configured-value snapshots, and lifecycle events.
-It never contains buyer, payment, ticket, email, refund, or Door fields.
+`listBookings` and `retrieveBooking` show what was booked: seat labels, category, section and
+channel, quantities and the price set on each seat when it was booked; `retrieveBooking` also
+lists the changes since, up to the latest 200. They hold no buyer, payment or ticket details.
 
 ```ts
 const page = await seatlayer.inventory.listBookings(eventKey, {
@@ -148,8 +150,8 @@ const detail = await seatlayer.inventory.retrieveBooking(
 );
 ```
 
-To release booked inventory, first update the commercial/refund state in your own system as your
-workflow requires, then cancel with the same reference that booked it:
+To release booked inventory, first record the refund or cancellation in your own system, then
+cancel with the same reference that booked it:
 
 ```ts
 await seatlayer.inventory.unbook(eventKey, {
@@ -158,21 +160,16 @@ await seatlayer.inventory.unbook(eventKey, {
 });
 ```
 
-SeatLayer releases inventory and records the lifecycle entry; it does not move or refund money,
-void a platform-owned ticket, send an email/PDF, or update a platform-owned scanner.
+`unbook` puts the seats back on sale and records the change. It does not refund money or cancel,
+email or re-scan tickets your platform issued.
 
 ## Fixed Renewable Seasons
 
-Version `0.7.0` adds the trusted organizer-side `seatlayer.seasons` resource.
-
-The resource includes identity-preserving reschedules, explicit replacement/cancellation
-exceptions with immutable amendment revisions, allocation/report health,
-missed-event replay, booking/holder support lookup, redacted audit, and a bounded
-versioned support export. Webhook delivery is counted only after a receiver
-returns 2xx; a replay request or queue enqueue is not reported as delivered.
-Operational feeds are deliberately bounded and report `truncated`; use exact
-resource reads for retained records. Only the top-level Season catalogue is
-cursor-paginated in the `0.7.0` contract.
+`seatlayer.seasons` has all 90 season operations: create a season from its dates
+and Plans, sell one seat across every date with the browser `SeasonPicker`, import
+last season's holders, offer and take renewals with your checkout or SeatLayer's,
+move or cancel a date for every holder at once, set season seats aside, and read
+sales and seat reports with CSV exports.
 
 Use a test key and test Events to validate the complete fixed Plan before
 creating anything. Validation is read-only and returns exact incompatibility
@@ -202,29 +199,30 @@ const publication = await seatlayer.seasons.publishSeasonPlan(
 const published = await seatlayer.seasons.waitForSeasonLifecycle(publication);
 ```
 
-Activation does not publish a Plan, publication does not open sales, and the
-audience remains `embed_only`. `openSeasonSales` deliberately returns a
-conflict until the S04 buyer hold/book/cancel/webhook rehearsal record exists.
+Activating a season does not publish its Plans, and publishing does not open
+sales: `openSeasonSales` does. With your own checkout, until a checkout test or
+the buyer rehearsal below has passed, `openSeasonSales` answers with a
+`checkout_test_missing` warning. The season stays off your SeatLayer website
+until you set `audience: 'public'`.
 Create all additional fixed Plans while the Season is still a draft. Each Plan
 is immutable after activation; published Plans can be superseded only while
 sales are closed or ended.
 
-A test Season is never promoted. `duplicateSeasonToLive` requires an explicit
-set of compatible live Event keys, creates new Season and Plan identities, and
-keeps sales closed. Lifecycle calls are single-attempt domain operations. If a
-response is non-terminal, poll only its retained `Location` through
-`waitForSeasonLifecycle`; do not invent a new action.
+A test season never becomes live. `duplicateSeasonToLive` copies it onto the
+live events you name, as a new season with its sales closed. If a lifecycle call
+answers before it has finished, wait with `waitForSeasonLifecycle` instead of
+sending a new action.
 
 ### Season buyer integration
 
-Mint the exact-origin browser session from trusted server code, keep its `bss_`
-token in memory, and pass it to the distinct JavaScript `SeasonPicker`. Before
-charging, retrieve the Season hold and use its trusted allocation identity. It
-contains Event, seat, category, optional tier, and quantity, but no commercial
-amount: `pricingAuthority` is `"host"` and `authoritativeAmountIncluded` is
-`false`. Calculate and charge the package price in your own trusted system.
-Book and cancel with caller-stable identities; cancellation has no implicit
-future-right policy.
+Create a buyer session for one website origin on your server, keep its `bss_`
+token in memory and pass it to the JavaScript `SeasonPicker`. Before charging,
+read the season hold: it lists the event, seat, category, optional tier and
+quantity for each date but no price (`pricingAuthority` is `"host"` and
+`authoritativeAmountIncluded` is `false`), so you calculate and charge the
+package price yourself. Book and cancel with ids you choose and keep, so a
+repeat is safe; a cancellation says what happens to the holder's renewal right
+through `rightDisposition`.
 
 ```ts
 const session = await seatlayer.seasons.createSeasonBuyerAccessSession(seasonKey, {
@@ -243,14 +241,9 @@ await seatlayer.seasons.cancelSeasonBooking(seasonKey, 'sba_order_1183', {
 await seatlayer.seasons.validateSeasonBuyerRehearsal(seasonKey);
 ```
 
-Rehearsal validation has no request body. SeatLayer automatically matches the
-retained hold, booking, cancellation, and successful webhook deliveries, then
-records an audit checkpoint. Do not copy internal action or subscription IDs
-into an operator form.
-
-Version `0.7.0` includes this retained-evidence validation path. A successful
-validation opens inventory sales only; your platform remains responsible for
-price, payment, orders, tax, refunds, tickets, and passes.
+Before you open sales, run one test hold, booking and cancellation with their
+webhooks, then call `validateSeasonBuyerRehearsal(seasonKey)`. It finds those
+test records itself, so it takes no body.
 
 ### Incumbent import and same-seat renewal
 
@@ -296,8 +289,8 @@ const created = await seatlayer.seasons.createSeasonRenewalOffers(
 if ('job' in created) return followRenewalRun(created.job, created.batchId);
 const { offers } = created;
 
-// Browser intent is not payment. Inspect and commit only after your trusted
-// host has made its commercial decision with the exact immutable Plan.
+// A buyer's renewal click is not a payment. Commit only after your own
+// checkout has taken the payment for this Plan.
 const inspected = await seatlayer.seasons.inspectSeasonRenewalOffer(seasonKey, offers[0]!.offerId);
 const accepted = await seatlayer.seasons.commitSeasonRenewalOffer(seasonKey, inspected.offer.offerId, {
   commitActionId: 'sba_renewal_ada_2027',
@@ -313,8 +306,8 @@ Renewal intent normally comes from a browser session bound to the exact `buyerRe
 a renewal taken by phone or at the box office, record it with your secret key first:
 `createSeasonRenewalIntent(seasonKey, offerId)`, then take the payment and commit. A decline
 can carry the holder's reason: `declineSeasonRenewalOffer(seasonKey, offerId, { reason })`.
-Extension is explicit and pre-lapse; no default extension is invented while
-organizer bounds and permission policy remain an owner-open rollout decision.
+To give a holder more time, call `extendSeasonRenewalOffer(seasonKey, offerId, deadlineAt)`
+before the offer lapses; nothing is extended by default.
 
 ### Renewal with SeatLayer checkout
 
@@ -399,9 +392,8 @@ const access = await seatlayer.channels.createBuyerAccessSession(eventKey, {
 ```
 
 For a managed invitation URL, use `createAccessLink`, persist the show-once URL immediately, and
-use `rotateAccessLink` or `revokeAccessLink` if it is misplaced. Channel reports use `bookedValue`
-and `includesBookedValue` for configured-price snapshots; `revenue` and `includesRevenue` remain
-deprecated response aliases for compatibility.
+use `rotateAccessLink` or `revokeAccessLink` if it is misplaced. In channel reports, `bookedValue`
+is the total of the prices set on the booked seats, and `includesBookedValue` says whether the report includes it. `revenue` and `includesRevenue` are older names for the same values and still work.
 
 ## Listing and pagination
 
@@ -464,10 +456,8 @@ const session = await seatlayer.sessions.createManageSession(eventKey, {
 
 The raw API safely defaults an omitted list to view-only (`event:view`). The SDK deliberately
 requires an explicit non-empty `capabilities` list so the browser authority is visible during code
-review. Grant only what the page needs. Viewing, blocking, cancellation, reports, and channels are
-Platform/SDK inventory work. `event:cancel` returns a Platform booking's inventory to sale but does
-not move gateway money. Eligible Managed Ticketing refunds use the separate `event:refund`
-capability.
+review. Grant only what the page needs. `event:cancel` puts a booking back on sale; it does not
+refund anyone. To refund an order that SeatLayer's checkout took, grant `event:refund`.
 
 The same pattern embeds the Designer in your own UI:
 
@@ -560,10 +550,10 @@ operations (`createSeason`, `updateSeason`, `deleteSeason`, `publishSeason`, `cr
 `Idempotency-Key` and reuses it for every attempt. All remaining SDK mutations are sent once; some
 have a server-side domain idempotency contract, but the SDK does not retry them automatically.
 
-**Booking safety.** Direct and box-office bookings have the server's exact-selection plus
-`bookingRef` safeguard, but the SDK still sends them once. Holds, best-available operations,
-show-once secret creation and raw mutations are also single-attempt; reconcile an unknown outcome
-before trying again.
+**Booking safety.** Sending the same direct or box-office booking again with the same `bookingRef`
+never sells a seat twice, but the SDK still sends each booking once. Holds, best-available
+operations, show-once secret creation and raw mutations are also single-attempt; reconcile an
+unknown outcome before trying again.
 
 ```ts
 new SeatLayer({
@@ -605,7 +595,7 @@ string.
 | `webhooks` | `list` `create` `update` `delete` `listDeliveries` |
 | `workspaces` | `list` `create` `retrieve` `update` |
 | `performanceGroups` | `listPerformanceGroups` `createPerformanceGroup` `retrievePerformanceGroup` `deletePerformanceGroup` `activatePerformanceGroup` `closePerformanceGroup` `retrievePerformanceGroupLifecycle` `createPerformanceGroupBuyerAccessSession` `listPerformanceGroupBuyerAccessSessions` `revokePerformanceGroupBuyerAccessSession` `retrievePerformanceGroupHold` `bookPerformanceGroupHold` `retrievePerformanceGroupBooking` |
-| `seasons` | 87 organizer operations for catalogue and Plan lifecycle, performances and package prices (with price types), sales windows, buyer access and booking, checkout tests, holder imports and the holder list, season orders, renewals and hosted renewal links, renewal quotes and checkouts, occurrence amendments (postpone, cancel) and inventory returns, bulk refunds of a cancelled date and the release of lapsed renewal offers with the jobs that run them, sales and seat reports, CSV exports, audit, outbox, and support export, plus polling helpers |
+| `seasons` | 90 organizer operations for catalogue and Plan lifecycle, performances and package prices (with price types), sales windows, buyer access and booking, checkout tests, holder imports and the holder list, season orders, renewals and hosted renewal links, renewal quotes and checkouts, occurrence amendments (postpone, cancel) and inventory returns, bulk refunds of a cancelled date and the release of lapsed renewal offers with the jobs that run them, sales and seat reports, CSV exports, audit, outbox, and support export, plus polling helpers |
 
 Full reference: [SeatLayer Server API](https://docs.seatlayer.io/server-api/events/)
 
@@ -642,12 +632,11 @@ outcome before trying again.
 
 ### Can I use my own payment provider?
 
-Yes. This server SDK does not process payment in a Platform/SDK integration. Inspect the hold,
-compute the charge from each returned item's authoritative `unitPrice`, `quantity`, and `currency`,
-take the money through whichever provider you already use, and then book the hold with your order
-id as `bookingRef`. SeatLayer owns seating state, holds, booking concurrency, and the inventory
-ledger in this integration; your platform owns payments, commercial orders, tickets, delivery,
-and refunds. Managed Ticketing is a separate product path with organizer-connected payments.
+Yes. Nothing in this SDK takes a payment: your server charges the hold's total through the provider
+you already use, then books the seats with your order id as `bookingRef`, and SeatLayer never
+touches the money. If you would rather SeatLayer run the checkout for an event
+(`events.replaceEventBuyerCheckout`), buyers pay through one of 14 payment gateways, including
+Stripe, PayPal and Square, straight into your own account.
 
 ## Continue your Node.js integration
 
