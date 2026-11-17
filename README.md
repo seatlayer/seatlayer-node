@@ -163,16 +163,11 @@ void a platform-owned ticket, send an email/PDF, or update a platform-owned scan
 
 ## Fixed Renewable Seasons
 
-Version `0.7.0` adds the trusted organizer-side `seatlayer.seasons` resource.
-
-The resource includes identity-preserving reschedules, explicit replacement/cancellation
-exceptions with immutable amendment revisions, allocation/report health,
-missed-event replay, booking/holder support lookup, redacted audit, and a bounded
-versioned support export. Webhook delivery is counted only after a receiver
-returns 2xx; a replay request or queue enqueue is not reported as delivered.
-Operational feeds are deliberately bounded and report `truncated`; use exact
-resource reads for retained records. Only the top-level Season catalogue is
-cursor-paginated in the `0.7.0` contract.
+`seatlayer.seasons` has all 90 season operations: create a season from its dates
+and Plans, sell one seat across every date with the browser `SeasonPicker`, import
+last season's holders, offer and take renewals with your checkout or SeatLayer's,
+move or cancel a date for every holder at once, set season seats aside, and read
+sales and seat reports with CSV exports.
 
 Use a test key and test Events to validate the complete fixed Plan before
 creating anything. Validation is read-only and returns exact incompatibility
@@ -605,7 +600,7 @@ string.
 | `webhooks` | `list` `create` `update` `delete` `listDeliveries` |
 | `workspaces` | `list` `create` `retrieve` `update` |
 | `performanceGroups` | `listPerformanceGroups` `createPerformanceGroup` `retrievePerformanceGroup` `deletePerformanceGroup` `activatePerformanceGroup` `closePerformanceGroup` `retrievePerformanceGroupLifecycle` `createPerformanceGroupBuyerAccessSession` `listPerformanceGroupBuyerAccessSessions` `revokePerformanceGroupBuyerAccessSession` `retrievePerformanceGroupHold` `bookPerformanceGroupHold` `retrievePerformanceGroupBooking` |
-| `seasons` | 87 organizer operations for catalogue and Plan lifecycle, performances and package prices (with price types), sales windows, buyer access and booking, checkout tests, holder imports and the holder list, season orders, renewals and hosted renewal links, renewal quotes and checkouts, occurrence amendments (postpone, cancel) and inventory returns, bulk refunds of a cancelled date and the release of lapsed renewal offers with the jobs that run them, sales and seat reports, CSV exports, audit, outbox, and support export, plus polling helpers |
+| `seasons` | 90 organizer operations for catalogue and Plan lifecycle, performances and package prices (with price types), sales windows, buyer access and booking, checkout tests, holder imports and the holder list, season orders, renewals and hosted renewal links, renewal quotes and checkouts, occurrence amendments (postpone, cancel) and inventory returns, bulk refunds of a cancelled date and the release of lapsed renewal offers with the jobs that run them, sales and seat reports, CSV exports, audit, outbox, and support export, plus polling helpers |
 
 Full reference: [SeatLayer Server API](https://docs.seatlayer.io/server-api/events/)
 
