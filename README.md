@@ -168,7 +168,7 @@ await seatlayer.inventory.unbook(eventKey, {
 `unbook` puts the seats back on sale and records the change. It does not refund money or cancel,
 email or re-scan tickets your platform issued.
 
-## Fixed Renewable Seasons
+## Season tickets (Fixed Renewable Seasons)
 
 `seatlayer.seasons` has all 90 season operations: create a season from its dates
 and Plans, sell one seat across every date with the browser `SeasonPicker`, import
