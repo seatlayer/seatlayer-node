@@ -1,16 +1,25 @@
-# SeatLayer Node.js Server SDK for Reserved Seating
+# SeatLayer Node.js SDK: seat booking, reserved seating and season ticket API
 
 [![CI](https://github.com/seatlayer/seatlayer-node/actions/workflows/ci.yml/badge.svg)](https://github.com/seatlayer/seatlayer-node/actions/workflows/ci.yml)
 [![npm](https://img.shields.io/npm/v/@seatlayer/server?label=%40seatlayer%2Fserver)](https://www.npmjs.com/package/@seatlayer/server)
 [![Node.js](https://img.shields.io/node/v/@seatlayer/server.svg)](https://www.npmjs.com/package/@seatlayer/server)
 [![License: MIT](https://img.shields.io/badge/license-MIT-111827.svg)](LICENSE)
 
-The official Node.js client for the SeatLayer API. `@seatlayer/server` lets a Node.js or TypeScript backend inspect seat holds, price orders from server data, book reserved seats and verify webhooks, with no runtime dependencies. SeatLayer is seating chart and reserved-seat ticketing software built for venues up to stadium scale.
+Book reserved seats from an Express route or a Next.js route handler: `@seatlayer/server` is
+SeatLayer's official TypeScript SDK for Node.js 20.19.4 and newer. It reads the seats a buyer holds
+with their real prices, books them under your own order id, and runs box office sales, season
+tickets and signed webhooks, with no runtime dependencies and types for both ESM and CommonJS.
 
-SeatLayer's official Node.js server SDK is the trusted side of its reserved seating and seat
-booking API. Inspect what a hold really contains, price from server-owned seating-chart data,
-and book with a stable `bookingRef`, while managing charts, events, inventory, allocations, and
-webhooks through one typed ticketing API client.
+## What SeatLayer is
+
+SeatLayer is reserved-seat ticketing and seating software: organizers sell with hosted checkout,
+a box office, door check-in and season tickets, and platforms add the same seat maps, with 3D
+seat views, through the SeatLayer SDK and API. One chart drives the 2D map, the 3D venue and the
+view from each seat (3D for venues up to 60,000 seats; the 2D map benchmarked at 200,000 seats).
+
+[Website](https://seatlayer.io/) · [For developers](https://seatlayer.io/developers/) ·
+[Season tickets](https://seatlayer.io/season-tickets/) · [Pricing](https://seatlayer.io/pricing/) ·
+[Live demo](https://seatlayer.io/demo/)
 
 [`@seatlayer/server` on npm](https://www.npmjs.com/package/@seatlayer/server) ·
 [Node.js server SDK guide](https://docs.seatlayer.io/server-sdk/node/) ·
@@ -33,10 +42,6 @@ returns and renewals.
 **How it works:** the buyer picks and holds seats in your website or app with your public key. Your server then reads the hold, takes the payment through your own provider, and books the seats with this SDK and your secret key.
 
 **Start here:** [Quickstart](https://docs.seatlayer.io/start/quickstart/) · [Holds and checkout](https://docs.seatlayer.io/buyer-sdk/holds-and-checkout/) · [Node.js server SDK guide](https://docs.seatlayer.io/server-sdk/node/) · [SDK catalog](https://docs.seatlayer.io/sdk-catalog.json) · [Pricing](https://seatlayer.io/pricing/): 100 sold seats free every month, then 10¢ down to 5¢ per sold seat. No subscription, and purchased credits never expire. Test mode is free.
-
-## Scale evidence
-
-Benchmarked on public 100,000-, 150,000- and 200,000-seat venue fixtures on 15 September 2026: 200,000 seats chart-ready in 1.95 s, desktop, local production build. Tested at 10,000 simulated concurrent buyers on one 12,000-seat event (18 September 2026): engine-side hold latency p99 9 ms, zero server errors. Method, fixtures and run files: https://github.com/seatlayer/seatlayer-performance. Live 200,000-seat stadium demo: https://app.seatlayer.io/demo/play/century-stadium-200k.
 
 ## Install the Node.js seat booking SDK
 
@@ -107,6 +112,7 @@ books. Never price from what the browser sent you: `retrieveHold` is the authori
 
 ```ts
 const hold = await seatlayer.inventory.retrieveHold(eventKey, holdId);
+if (hold.status !== 'active') throw new Error('Hold is no longer active.');
 if (!hold.items.length) throw new Error('Hold has no items.');
 const currency = hold.items[0]!.currency;
 if (!hold.items.every((item) => item.currency === currency)) {
@@ -163,7 +169,7 @@ await seatlayer.inventory.unbook(eventKey, {
 `unbook` puts the seats back on sale and records the change. It does not refund money or cancel,
 email or re-scan tickets your platform issued.
 
-## Fixed Renewable Seasons
+## Season tickets (Fixed Renewable Seasons)
 
 `seatlayer.seasons` has all 90 season operations: create a season from its dates
 and Plans, sell one seat across every date with the browser `SeasonPicker`, import
@@ -502,6 +508,8 @@ app.post('/webhooks/seatlayer', express.raw({ type: 'application/json' }), async
 });
 ```
 
+In a Next.js route handler, pass `await request.text()` as `payload`.
+
 ## Errors
 
 ```ts
@@ -532,17 +540,17 @@ requests.
 
 ## Reliability
 
-**Retries and idempotency.** Reads retry 408, 429 and 5xx responses with backoff. Forty-one
+**Retries and idempotency.** Reads retry 408, 429 and 5xx responses with backoff. Forty-three
 mutations use exact header replay: `charts.create`, `charts.copy`, `templates.instantiateTemplate`,
-`events.create`, `workspaces.create`, `performanceGroups.createPerformanceGroup`; 26 Season
+`events.create`, `workspaces.create`, `performanceGroups.createPerformanceGroup`; 28 Season
 operations (`createSeason`, `updateSeason`, `deleteSeason`, `publishSeason`, `createSeasonPlan`,
 `updateSeasonPlan`, `deleteSeasonPlan`, `duplicateSeasonToLive`, `createSeasonHolderImport`,
 `createSeasonHolderImportFromSeason`, `createSeasonRenewalOffers`, `createSeasonAmendment`,
 `createSeasonPerformances`, `attachSeasonPerformances`, `deleteSeasonPerformance`,
 `markSeasonPerformancePast`, `attachSeasonPlanPerformance`, `deleteSeasonPlanPerformance`,
 `replaceSeasonPackagePrices`, `createSeasonCheckoutTest`, `refundSeasonOrder`, `cancelSeasonOrder`,
-`cancelSeasonOrderDate`, `refundSeasonPerformance`, `releaseSeasonLapsedOffers`, and
-`createSeasonRenewalCheckout`);
+`cancelSeasonOrderDate`, `refundSeasonPerformance`, `releaseSeasonLapsedOffers`, `createSeasonRenewalCheckout`, `setAsideSeasonBlock`,
+and `releaseSeasonBlock`);
 `holders.updateHolder`, `holders.createHolderTransfer`, `holders.createHolderReturn`, and
 `holders.createHolderRenewalCheckout`; `orders.refundEventOrder` and `orders.cancelEventOrder`; and
 `eventSeries.createEventSeries`, `eventSeries.addEventSeriesDates`, and
@@ -558,7 +566,7 @@ unknown outcome before trying again.
 ```ts
 new SeatLayer({
   secretKey: process.env.SEATLAYER_SECRET_KEY!,
-  maxRetries: 3,      // retries for reads and the 41 exact-header-replay mutations
+  maxRetries: 3,      // retries for reads and the 43 exact-header-replay mutations
   timeoutMs: 30_000,  // per attempt
 });
 ```
@@ -601,34 +609,43 @@ Full reference: [SeatLayer Server API](https://docs.seatlayer.io/server-api/even
 
 ## Frequently asked questions
 
+### What does the SeatLayer API do for a ticketing platform?
+
+SeatLayer gives your Node.js backend one API for seating charts, live seat holds, booking, box
+office sales and season tickets, with official SDKs in Node.js, Python, PHP, Java, Go, Ruby and
+.NET. Buyers pick seats on the same SeatLayer map on the web, iOS, Android, Flutter and React
+Native, and your server books what they hold with your own order id, so a retried booking never
+sells a seat twice. You pay only for sold seats: 100 a month are free, then 10¢ down to 5¢ a seat,
+with no subscription, and holds and test mode cost nothing. Its measured results are under Scale
+evidence below.
+
+### How much does the SeatLayer API cost?
+
+Building and testing is free: test mode has no time limit, needs no card and uses no credits. Live,
+with your own checkout, you pay one credit per confirmed sold seat: the first 100 sold seats each
+month are free, then 10¢ down to 5¢ a seat, with no subscription, and purchased credits never
+expire. Designing charts, showing the map, holds and releases never use a credit. An event that
+sells through SeatLayer's checkout costs $0.50 per ticket instead, and your first 25 tickets are
+free.
+
 ### How do I book seats from Node.js?
 
-Create a client with your secret key, obtain a hold id (either from the buyer's
-browser session or by holding server-side) and call `inventory.book(eventKey, { holdId, bookingRef })`.
-`bookingRef` is your own stable order id and is the join between SeatLayer
-inventory and your commercial order, so the same reference identifies the booking
-in Booking History and when you later cancel it. For phone orders, box office, and
-comps, `inventory.bookBestAvailable` books outright with no browser involved.
+Create a client with your secret key, read the buyer's hold with `inventory.retrieveHold` to get the
+real seats and prices, take the payment, then call
+`inventory.book(eventKey, { holdId, bookingRef })` with your own order id as `bookingRef`. For phone
+orders, the box office and comps, `inventory.bookBestAvailable` picks and books the best available seats in
+one call, with no browser involved. Keep that `bookingRef` for the order: it finds the booking again
+in `inventory.listBookings` and cancels it with `inventory.unbook`.
 
-### What does the server SDK do compared with the buyer SDK?
+### How do I stop two buyers taking the same seat?
 
-The buyer SDK runs where the ticket buyer is: it renders the interactive seating
-chart, handles seat selection, and creates temporary holds. This server SDK is the
-trusted side. It authenticates with your secret key, inspects what a hold actually
-contains, prices from server-owned data, and books. Never bundle the secret key
-into a browser or a mobile app. Browser surfaces get short-lived, origin-bound
-tokens that you mint here.
-
-### How do temporary holds work server-side?
-
-A hold reserves seats against concurrent buyers for a limited window.
-`inventory.retrieveHold(eventKey, holdId)` is the authoritative answer for what is held
-and at what price, so charge from its `items` rather than from anything the browser
-sent you. When an order runs longer than the checkout window, `inventory.extendHold`
-renews the hold instead of releasing and re-holding, which would hand the seats to
-whoever is racing for them. Bookings carry the server's exact-selection plus
-`bookingRef` safeguard, but the SDK sends each booking once; reconcile an unknown
-outcome before trying again.
+In the SeatLayer picker, a buyer's seats are held when they go to checkout; with the headless `SeatingChart`, your page calls `hold()`. The hold keeps those seats for that buyer for a set time, which you can change
+per event, and every other buyer sees them taken. Your server reads the hold with
+`inventory.retrieveHold`, charges from the prices it returns rather than anything the browser sent,
+and books it; `inventory.extendHold` gives a slow checkout more time without letting the seats go.
+If a booking call times out, check `inventory.listBookings` for that `bookingRef`, or repeat the exact same
+booking with the same hold and `bookingRef`: seats already booked under it are not sold again,
+though the repeat can return an empty booked list.
 
 ### Can I use my own payment provider?
 
@@ -637,6 +654,23 @@ you already use, then books the seats with your order id as `bookingRef`, and Se
 touches the money. If you would rather SeatLayer run the checkout for an event
 (`events.replaceEventBuyerCheckout`), buyers pay through one of 14 payment gateways, including
 Stripe, PayPal and Square, straight into your own account.
+
+### How do I sell season tickets and renewals through an API?
+
+The season API is in this SDK: `seatlayer.seasons` has all 90 season operations. You create a season
+from its dates with `createSeason`, the buyer chooses one seat in the browser `SeasonPicker` and the
+season hold takes it on every date at once, and your server books it with `bookSeasonHold`; for the
+next season, `createSeasonRenewalOffers` offers each holder the same seat. `setAsideSeasonBlock`
+sets season seats aside on every date before sales open, and with your own checkout each season seat
+uses one SDK credit per date, like any other sold seat.
+
+### Does it work with Express and Next.js?
+
+Yes. In Express, give the webhook route `express.raw({ type: 'application/json' })` so
+`verifyWebhook` gets the raw body; in a Next.js route handler, pass `await request.text()`. Call it
+from server code on the Node.js runtime, which Next.js route handlers use by default; the package
+ships TypeScript types for ESM and CommonJS. The [Next.js example](https://github.com/seatlayer/seatlayer-nextjs-example) has
+an `/api/hold` route that reads a hold and books it.
 
 ## Continue your Node.js integration
 
@@ -654,6 +688,9 @@ Stripe, PayPal and Square, straight into your own account.
   (`llms.txt`) for an agent-readable map of the documentation.
 - [Explore every SeatLayer SDK on GitHub](https://github.com/seatlayer)
   across web, mobile, and server.
+- [Season ticket API guide](https://seatlayer.io/guides/season-ticket-api/): build a season end to end.
+- [Box office](https://seatlayer.io/box-office/): sell at the counter from the same live seats.
+- [SDK and API overview](https://seatlayer.io/developers/) and [pricing](https://seatlayer.io/pricing/).
 
 ### Other SeatLayer SDKs
 
@@ -661,6 +698,8 @@ Stripe, PayPal and Square, straight into your own account.
 | --- | --- |
 | JavaScript | [`@seatlayer/js`](https://www.npmjs.com/package/@seatlayer/js) |
 | React | [`@seatlayer/react`](https://www.npmjs.com/package/@seatlayer/react) |
+| Vue | [`@seatlayer/vue`](https://www.npmjs.com/package/@seatlayer/vue) |
+| Angular | [`@seatlayer/angular`](https://www.npmjs.com/package/@seatlayer/angular) |
 | React Native | [`@seatlayer/react-native`](https://www.npmjs.com/package/@seatlayer/react-native) |
 | iOS | [`seatlayer-ios`](https://github.com/seatlayer/seatlayer-ios) |
 | Flutter | [`seatlayer`](https://pub.dev/packages/seatlayer) |
@@ -672,6 +711,10 @@ Stripe, PayPal and Square, straight into your own account.
 | .NET (server) | [`SeatLayer`](https://www.nuget.org/packages/SeatLayer) |
 | Java (server) | [`io.seatlayer:seatlayer-java`](https://central.sonatype.com/artifact/io.seatlayer/seatlayer-java) |
 | Go (server) | [`github.com/seatlayer/seatlayer-go`](https://pkg.go.dev/github.com/seatlayer/seatlayer-go) |
+
+## Scale evidence
+
+Benchmarked on public 100,000-, 150,000- and 200,000-seat venue fixtures on 15 September 2026: 200,000 seats chart-ready in 1.95 s, desktop, local production build. Tested at 10,000 simulated concurrent buyers on one 12,000-seat event (18 September 2026): engine-side hold latency p99 9 ms, zero server errors. Method, fixtures and run files: https://github.com/seatlayer/seatlayer-performance. Live 200,000-seat stadium demo: https://app.seatlayer.io/demo/play/century-stadium-200k.
 
 ## Development
 
