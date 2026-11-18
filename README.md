@@ -10,6 +10,17 @@ SeatLayer's official TypeScript SDK for Node.js 20.19.4 and newer. It reads the 
 with their real prices, books them under your own order id, and runs box office sales, season
 tickets and signed webhooks, with no runtime dependencies and types for both ESM and CommonJS.
 
+## What SeatLayer is
+
+SeatLayer is reserved-seat ticketing and seating software: organizers sell with hosted checkout,
+a box office, door check-in and season tickets, and platforms add the same seat maps, with 3D
+seat views, through the SeatLayer SDK and API. One chart drives the 2D map, the 3D venue and the
+view from each seat (3D for venues up to 60,000 seats; the 2D map benchmarked at 200,000 seats).
+
+[Website](https://seatlayer.io/) · [For developers](https://seatlayer.io/developers/) ·
+[Season tickets](https://seatlayer.io/season-tickets/) · [Pricing](https://seatlayer.io/pricing/) ·
+[Live demo](https://seatlayer.io/demo/)
+
 [`@seatlayer/server` on npm](https://www.npmjs.com/package/@seatlayer/server) ·
 [Node.js server SDK guide](https://docs.seatlayer.io/server-sdk/node/) ·
 [SeatLayer SDK and API overview](https://seatlayer.io/developers/) ·
