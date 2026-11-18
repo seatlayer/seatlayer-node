@@ -112,6 +112,7 @@ books. Never price from what the browser sent you: `retrieveHold` is the authori
 
 ```ts
 const hold = await seatlayer.inventory.retrieveHold(eventKey, holdId);
+if (hold.status !== 'active') throw new Error('Hold is no longer active.');
 if (!hold.items.length) throw new Error('Hold has no items.');
 const currency = hold.items[0]!.currency;
 if (!hold.items.every((item) => item.currency === currency)) {
@@ -539,17 +540,17 @@ requests.
 
 ## Reliability
 
-**Retries and idempotency.** Reads retry 408, 429 and 5xx responses with backoff. Forty-one
+**Retries and idempotency.** Reads retry 408, 429 and 5xx responses with backoff. Forty-three
 mutations use exact header replay: `charts.create`, `charts.copy`, `templates.instantiateTemplate`,
-`events.create`, `workspaces.create`, `performanceGroups.createPerformanceGroup`; 26 Season
+`events.create`, `workspaces.create`, `performanceGroups.createPerformanceGroup`; 28 Season
 operations (`createSeason`, `updateSeason`, `deleteSeason`, `publishSeason`, `createSeasonPlan`,
 `updateSeasonPlan`, `deleteSeasonPlan`, `duplicateSeasonToLive`, `createSeasonHolderImport`,
 `createSeasonHolderImportFromSeason`, `createSeasonRenewalOffers`, `createSeasonAmendment`,
 `createSeasonPerformances`, `attachSeasonPerformances`, `deleteSeasonPerformance`,
 `markSeasonPerformancePast`, `attachSeasonPlanPerformance`, `deleteSeasonPlanPerformance`,
 `replaceSeasonPackagePrices`, `createSeasonCheckoutTest`, `refundSeasonOrder`, `cancelSeasonOrder`,
-`cancelSeasonOrderDate`, `refundSeasonPerformance`, `releaseSeasonLapsedOffers`, and
-`createSeasonRenewalCheckout`);
+`cancelSeasonOrderDate`, `refundSeasonPerformance`, `releaseSeasonLapsedOffers`, `createSeasonRenewalCheckout`, `setAsideSeasonBlock`,
+and `releaseSeasonBlock`);
 `holders.updateHolder`, `holders.createHolderTransfer`, `holders.createHolderReturn`, and
 `holders.createHolderRenewalCheckout`; `orders.refundEventOrder` and `orders.cancelEventOrder`; and
 `eventSeries.createEventSeries`, `eventSeries.addEventSeriesDates`, and
@@ -565,7 +566,7 @@ unknown outcome before trying again.
 ```ts
 new SeatLayer({
   secretKey: process.env.SEATLAYER_SECRET_KEY!,
-  maxRetries: 3,      // retries for reads and the 41 exact-header-replay mutations
+  maxRetries: 3,      // retries for reads and the 43 exact-header-replay mutations
   timeoutMs: 30_000,  // per attempt
 });
 ```
@@ -632,19 +633,19 @@ free.
 Create a client with your secret key, read the buyer's hold with `inventory.retrieveHold` to get the
 real seats and prices, take the payment, then call
 `inventory.book(eventKey, { holdId, bookingRef })` with your own order id as `bookingRef`. For phone
-orders, the box office and comps, `inventory.bookBestAvailable` picks and books the best seats in
+orders, the box office and comps, `inventory.bookBestAvailable` picks and books the best available seats in
 one call, with no browser involved. Keep that `bookingRef` for the order: it finds the booking again
 in `inventory.listBookings` and cancels it with `inventory.unbook`.
 
 ### How do I stop two buyers taking the same seat?
 
-In the SeatLayer picker, a buyer's seats are held when they go to checkout; with the bare chart,
-your code calls hold. The hold keeps those seats for that buyer for a set time, which you can change
-per event, and every other buyer sees them taken at once. Your server reads the hold with
+In the SeatLayer picker, a buyer's seats are held when they go to checkout; with the headless `SeatingChart`, your page calls `hold()`. The hold keeps those seats for that buyer for a set time, which you can change
+per event, and every other buyer sees them taken. Your server reads the hold with
 `inventory.retrieveHold`, charges from the prices it returns rather than anything the browser sent,
 and books it; `inventory.extendHold` gives a slow checkout more time without letting the seats go.
-If a booking call times out, send it again with the same hold and the same `bookingRef`: seats
-already booked under that reference are never sold twice.
+If a booking call times out, check `inventory.listBookings` for that `bookingRef`, or repeat the exact same
+booking with the same hold and `bookingRef`: seats already booked under it are not sold again,
+though the repeat can return an empty booked list.
 
 ### Can I use my own payment provider?
 
@@ -668,7 +669,7 @@ uses one SDK credit per date, like any other sold seat.
 Yes. In Express, give the webhook route `express.raw({ type: 'application/json' })` so
 `verifyWebhook` gets the raw body; in a Next.js route handler, pass `await request.text()`. Call it
 from server code on the Node.js runtime, which Next.js route handlers use by default; the package
-ships TypeScript types for ESM and CommonJS. The Next.js example in the SeatLayer organization has
+ships TypeScript types for ESM and CommonJS. The [Next.js example](https://github.com/seatlayer/seatlayer-nextjs-example) has
 an `/api/hold` route that reads a hold and books it.
 
 ## Continue your Node.js integration
