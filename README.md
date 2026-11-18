@@ -1,16 +1,14 @@
-# SeatLayer Node.js Server SDK for Reserved Seating
+# SeatLayer Node.js SDK: seat booking, reserved seating and season ticket API
 
 [![CI](https://github.com/seatlayer/seatlayer-node/actions/workflows/ci.yml/badge.svg)](https://github.com/seatlayer/seatlayer-node/actions/workflows/ci.yml)
 [![npm](https://img.shields.io/npm/v/@seatlayer/server?label=%40seatlayer%2Fserver)](https://www.npmjs.com/package/@seatlayer/server)
 [![Node.js](https://img.shields.io/node/v/@seatlayer/server.svg)](https://www.npmjs.com/package/@seatlayer/server)
 [![License: MIT](https://img.shields.io/badge/license-MIT-111827.svg)](LICENSE)
 
-The official Node.js client for the SeatLayer API. `@seatlayer/server` lets a Node.js or TypeScript backend inspect seat holds, price orders from server data, book reserved seats and verify webhooks, with no runtime dependencies. SeatLayer is seating chart and reserved-seat ticketing software built for venues up to stadium scale.
-
-SeatLayer's official Node.js server SDK is the trusted side of its reserved seating and seat
-booking API. Inspect what a hold really contains, price from server-owned seating-chart data,
-and book with a stable `bookingRef`, while managing charts, events, inventory, allocations, and
-webhooks through one typed ticketing API client.
+Book reserved seats from an Express route or a Next.js route handler: `@seatlayer/server` is
+SeatLayer's official TypeScript SDK for Node.js 20.19.4 and newer. It reads the seats a buyer holds
+with their real prices, books them under your own order id, and runs box office sales, season
+tickets and signed webhooks, with no runtime dependencies and types for both ESM and CommonJS.
 
 [`@seatlayer/server` on npm](https://www.npmjs.com/package/@seatlayer/server) ·
 [Node.js server SDK guide](https://docs.seatlayer.io/server-sdk/node/) ·
