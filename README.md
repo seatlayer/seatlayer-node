@@ -507,6 +507,8 @@ app.post('/webhooks/seatlayer', express.raw({ type: 'application/json' }), async
 });
 ```
 
+In a Next.js route handler, pass `await request.text()` as `payload`.
+
 ## Errors
 
 ```ts
